@@ -1,0 +1,101 @@
+---
+title: "word2vec_morris"
+output: html_document
+---
+
+
+```{r, echo=FALSE, warning=FALSE}
+suppressPackageStartupMessages(library(devtools))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(wordVectors))
+suppressPackageStartupMessages(library(wordbankr))
+suppressPackageStartupMessages(library(readr))
+suppressPackageStartupMessages(library(shiny))
+suppressPackageStartupMessages(library(shinyBS))
+suppressPackageStartupMessages(library(visNetwork))
+suppressPackageStartupMessages(library(langcog))
+suppressPackageStartupMessages(library(tsne))
+
+#wordbank
+# https://github.com/langcog/wordbank
+english_data <- get_instrument_data("English", "WS", iteminfo=TRUE)
+
+english_items <- get_item_data('English', 'WS') %>%
+  filter(type =='word') %>%
+  select(uni_lemma)
+
+
+# source: https://github.com/bmschmidt/wordVectors#quick-start
+
+#"There's a lot of other stuff you can do besides just measuring nearness: you can do analogies, projection, and more complicated plots. But for that you should read my blog posts on this"
+```
+
+
+
+
+```{r, echo=FALSE, cache= TRUE}
+#training the model on CHILDES
+#full childes
+model = train_word2vec("CHILDES_words_only.txt",output="full_vectors.bin",threads = 3,vectors = 100,window=6, cbow=1, min_count = 10, force= TRUE)
+
+#basic function to display the nearest elements for a specified target
+nearest_to(model,model[["eat"]])
+#special case words?
+nearest_to(model,model[["choochoo"]])
+nearest_to(model,model[["choo choo"]])
+#same function expanded to multiple elements
+nearest_to(model,model[[c("eat","finish","feed","spoil","cook","swallow","eats")]],20)
+#use tnse package to plot in reduced dimensional space
+some_eat = nearest_to(model,model[[c("eat","finish","feed","spoil","cook","swallow","eats")]],20)
+plot(filter_to_rownames(model,names(some_eat)))
+
+
+#create word similarity matrix
+CHILDES_sim <- cosineSimilarity(model,model)
+
+#filter the matrix to only include CDI words
+CHILDES_sim_wordbank <-CHILDES_sim[rownames(CHILDES_sim) %in% english_items$uni_lemma,
+            colnames(CHILDES_sim) %in% english_items$uni_lemma]
+
+#special case words from CDI?
+english_items$uni_lemma %in% rownames(CHILDES_sim_wordbank)
+
+#scaling weights
+all_weights <- as.vector(CHILDES_sim_wordbank)
+non_diag_weights <- all_weights[all_weights < -.3]
+hist(non_diag_weights)
+hist(CHILDES_sim_wordbank)
+hist(scale(non_diag_weights))
+hist(abs(non_diag_weights))
+hist(abs(scale(non_diag_weights)))
+CHILDES_scaled <- abs(scale(non_diag_weights))
+
+CHILDES_scaled <- (abs(scale(CHILDES_sim_wordbank)))
+#write.csv(CHILDES_sim_wordbank, 'CHILDES_word2vec.csv')
+```
+
+
+```{r, echo=FALSE}
+#Picture book training
+#NOTE: the picture book corpus needs cleaning, remove titles/authors
+model = train_word2vec("picture_books/100Books.txt",output="books_vectors.bin",threads = 3,vectors = 100,window=6, cbow=1, min_count = 10, force= TRUE)
+
+#create word similarity matrix
+books_sim <- cosineSimilarity(model,model)
+
+#filter the matrix to only include CDI words
+books_sim_wordbank <-books_sim[rownames(books_sim) %in% english_items$uni_lemma,
+            colnames(books_sim) %in% english_items$uni_lemma]
+books_scaled <- ((scale(books_sim_wordbank)))
+
+#write.csv(books_sim_wordbank, 'books_word2vec.csv')
+
+```
+
+```{r, echo= FALSE}
+#run the networks shiny app
+runApp("shiny_apps/networks")
+```
+
+
