@@ -23,7 +23,9 @@ english_data <- get_instrument_data("English", "WS", iteminfo=TRUE)
 
 english_items <- get_item_data('English', 'WS') %>%
   filter(type =='word') %>%
-  select(uni_lemma)
+  select(uni_lemma) %>%
+  distinct() 
+#NOTE: This drops "an" from the cdi. Might be other cases where two definitions map onto the same uni_lemma
 
 
 # source: https://github.com/bmschmidt/wordVectors#quick-start
@@ -57,6 +59,61 @@ CHILDES_sim <- cosineSimilarity(model,model)
 #filter the matrix to only include CDI words
 CHILDES_sim_wordbank <-CHILDES_sim[rownames(CHILDES_sim) %in% english_items$uni_lemma,
             colnames(CHILDES_sim) %in% english_items$uni_lemma]
+
+
+# Write a csv of the missing lemmas to join back in
+english_items_missing <- english_items %>%
+  filter(!uni_lemma %in% colnames(CHILDES_sim)) %>%
+  write_csv("missing_lemmas.csv")
+
+# Read back the csv with a new colum of replacement lemmas
+missing_items <- read_csv("missing_lemmas.csv")
+
+# For compounds, try adding models senses
+# For disambiguation, assume most frequent sense, drop less frequent
+# For polysmey (animal/food) subtract out opposite
+
+
+# Make a new dataframe with a column indicating the similarity matrix row/column that corresponds to a CDI uni_lemma
+fixed_items <- left_join(english_items, missing_items) %>%
+  mutate(fixed_item = if_else(is.na(replacement), uni_lemma, replacement)) 
+
+#filter the matrix to only include CDI words
+CHILDES_sim_wordbank <-CHILDES_sim[rownames(CHILDES_sim) %in% fixed_items$fixed_item,
+            colnames(CHILDES_sim) %in% fixed_items$fixed_item]
+
+
+CHILDES_sim_modified <- CHILDES_sim
+cbind(CHILDES_sim_modified, CHILDES_sim["teddy",] + CHILDES_sim["bear",] 
+
+
+# Order fixed_items alphabetically
+ordered_items <- fixed_items %>%
+  filter(fixed_item %in% rownames(CHILDES_sim_wordbank)) %>%
+  arrange(fixed_item) %>%
+  distinct(fixed_item, .keep_all = TRUE)
+ordered_items[matrix_order, ]
+
+# Order the similarity_matrix alphabetically
+CHILDES_sim_ordered <- CHILDES_sim_wordbank[order(rownames(CHILDES_sim_wordbank)),
+                                            order(colnames(CHILDES_sim_wordbank))]
+
+# Rename the similarity matrix row/columns to CDI uni_lemmas
+rownames(CHILDES_sim_ordered) <- ordered_items$uni_lemma
+colnames(CHILDES_sim_ordered) <- ordered_items$uni_lemma
+
+
+order(fixed_items$fixed_item)
+
+
+rownames(CHILDES_sim_wordbank)
+  filter(fixed_item %in% rownames(CHILDES_sim_wordbank)) %>%
+  arrange(fixed_item)
+
+nearest_to(model, model[["ice"]] + model[["cream"]])
+           
+           
+           ,demo_vectors[["guy"]] - demo_vectors[["man"]] + demo_vectors[["woman"]])
 
 #special case words from CDI?
 english_items$uni_lemma %in% rownames(CHILDES_sim_wordbank)
