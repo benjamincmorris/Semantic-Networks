@@ -20,7 +20,7 @@ c_assocs <- read_csv(file = "assocs/c_assoc_mat.csv")
 p_assocs <- read_csv(file = "assocs/p_assoc_mat.csv")
 all_assocs <- read_csv(file = "assocs/assoc_mat.csv")
 w2v_assocs<- read_csv(file= 'assocs/w2v_assocs.csv')
-pb_assocs<- read_csv(file = 'assocs/books_word2vec.csv')
+# pb_assocs<- read_csv(file = 'assocs/books_word2vec.csv')
 
 ws_aoas <- read_csv("aoas/eng_ws_production_aoas.csv") 
 wg_comp_aoas <- read_csv("aoas/eng_wg_production_aoas.csv") 
@@ -52,17 +52,17 @@ shinyServer(function(input, output) {
     req(input$source)
     
     if (input$source == "W2V"){
-      title <- "Cosine Similarity"
-      high_point <- 1
-      start_point <- .6
-      low_point <- -1
-      step_size <- .1
-    } else if (input$source == "PB"){
-      title <- "Cosine Similarity"
-      high_point <- 1
-      start_point <- .6
-      low_point <- -1
-      step_size <- .1
+      title <- "Normalized Cosine Similarity"
+      high_point <- .2
+      start_point <- .08
+      low_point <- 0
+      step_size <- .01
+    # } else if (input$source == "PB"){
+    #   title <- "Cosine Similarity"
+    #   high_point <- 1
+    #   start_point <- .6
+    #   low_point <- -1
+    #   step_size <- .1
     } else if (input$source == "MFN"){
       title <- "Number of Shared Features"
       high_point <- 4
@@ -123,7 +123,7 @@ shinyServer(function(input, output) {
                               stringsAsFactors = FALSE) %>%
       mutate(id = 1:n(), 
              identity = 1) %>%
-      left_join(aoa_data()) %>%
+      left_join(aoa_data()) %>% #left_join in wide ? format version of english item csv with category
       filter(!is.na(aoa), aoa <= input$age) %>%
       select_("label", "id", input$group) %>%
       rename_("group" = input$group)
@@ -150,13 +150,13 @@ shinyServer(function(input, output) {
   assoc_edges <- reactive({
     req(input$weighted)
     
+    scaling = ifelse(input$source == "W2V", 15, 1)
+    
     #print(assoc_nodes())
     
     edges <- assoc_edge_data() %>%
-      #i thought one way forward would be to use abs(width) here
-      # to set the cutoff while including the negative but wasn't
-      # get it to display the negative weights, so removed the change.
-      filter(width >= input$cutoff)
+      mutate(width = scaling*width) %>%
+      filter(width >= (scaling*input$cutoff)) 
     
     if (input$weighted == "TRUE") {
       edges

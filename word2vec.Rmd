@@ -25,6 +25,8 @@ english_items <- get_item_data('English', 'WS') %>%
   filter(type =='word') %>%
   select(uni_lemma) %>%
   distinct() 
+
+categories <- english_items %>%
 #NOTE: This drops "an" from the cdi. Might be other cases where two definitions map onto the same uni_lemma
 
 
@@ -106,25 +108,28 @@ model_wordbank_unilemmas <- as.VectorSpaceModel(model_wordbank_specialcases[rown
 #create word similarity matrix
 wordbank_sim <- cosineSimilarity(model_wordbank_unilemmas, model_wordbank_unilemmas)
 
-#scaling weights
-all_weights <- as.vector(CHILDES_sim_wordbank)
-non_diag_weights <- all_weights[all_weights < -.3]
-hist(non_diag_weights)
-hist(CHILDES_sim_wordbank)
-hist(scale(non_diag_weights))
-hist(abs(non_diag_weights))
-hist(abs(scale(non_diag_weights)))
-CHILDES_scaled <- abs(scale(non_diag_weights))
+#set to zero all the negative values in the matrix
+wordbank_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
+#also set the self weights to zero before normalizing
+diag(wordbank_zeroed) <- 0
 
-CHILDES_scaled <- (abs(scale(CHILDES_sim_wordbank)))
-#write.csv(CHILDES_sim_wordbank, 'CHILDES_word2vec.csv')
+#"normalize the rows of the matrix, such that each row sums to one, and that any value DM(I,J) can be interpreted as the strength of the directional connection from word WI to word WJ" (Rotaru, 2016)
+wordbank_normal <- normalize_lengths(wordbank_zeroed)
+hist(wordbank_normal)
+
+# Rotaru 2016 also does the following step: "(f) consider the discrete Markov chain associated with DM, which we denote as MARKOV(DM), and compute the state of MARKOV(DM) at steps K = 1 through K = 7, namely SK(DM); (g) for each word W and each K between 1 and 7"
+
+#write the matirx for visualization
+#NOTE:if you rewrite the csv file, the network will NOT load when you run the shiny app
+# until you manually enter 'in_node' (without quotes) as the value for the first cell of the data sheet.
+#write.csv(wordbank_normal, file= 'shiny_apps/networks/assocs/w2v_assocs.csv')
 ```
 
 
 ```{r, echo=FALSE}
-#Picture book training
+#Picture book training NOT USING THIS AT THE MOMENT
 #NOTE: the picture book corpus needs cleaning, remove titles/authors
-model = train_word2vec("picture_books/100Books.txt",output="books_vectors.bin",threads = 3,vectors = 100,window=6, cbow=1, min_count = 10, force= TRUE)
+model = train_word2vec("100Books.txt",output="books_vectors.bin",threads = 3,vectors = 100,window=6, cbow=1, min_count = 10, force= TRUE)
 
 #create word similarity matrix
 books_sim <- cosineSimilarity(model,model)
@@ -133,6 +138,65 @@ books_sim <- cosineSimilarity(model,model)
 books_sim_wordbank <-books_sim[rownames(books_sim) %in% english_items$uni_lemma,
             colnames(books_sim) %in% english_items$uni_lemma]
 books_scaled <- ((scale(books_sim_wordbank)))
+
+
+english_items_missing <- english_items %>%
+  filter(!uni_lemma %in% rownames(model)) %>%
+  write_csv("book_missing_lemmas.csv")
+
+missing_items <- read_csv("missing_lemmas.csv")
+
+all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
+                        english_items$uni_lemma))
+
+#filter the matrix to only include CDI words
+model_wordbank <-model[rownames(model) %in% all_cdi_words]
+model_wordbank_sorted <-model_wordbank[sort(rownames(model_wordbank)),]
+
+#Special cases
+special_cases <- missing_items %>%
+  filter(!is.na(addword) | !is.na(subword))
+
+rename_cases <- missing_items %>%
+  filter(is.na(addword) & is.na(subword),
+         !is.na(word)) %>%
+  arrange(uni_lemma)
+
+extra_rows <- rownames(model_wordbank_sorted)  %in% rename_cases$word
+rownames(model_wordbank_sorted)[extra_rows] <- rename_cases$uni_lemma
+
+special_case_vector <- function(special_case) {
+  if(!is.na(special_case$addword)) {
+   model_wordbank[special_case$word,] + 
+      model_wordbank[special_case$addword,]
+  } else {
+    model_wordbank[special_case$word,] - 
+      model_wordbank[special_case$subword,]
+  }
+}
+
+special_case_vectors <- t(sapply(1:nrow(special_cases), 
+                               function(x) special_case_vector(special_cases[x,]), 
+                               simplify = "matrix"))
+rownames(special_case_vectors) <- special_cases$uni_lemma
+
+model_wordbank_specialcases <- rbind(model_wordbank_sorted, special_case_vectors)
+
+model_wordbank_unilemmas <- as.VectorSpaceModel(model_wordbank_specialcases[rownames(model_wordbank_specialcases)
+                                                        %in% english_items$uni_lemma, ])
+
+
+#create word similarity matrix
+wordbank_sim <- cosineSimilarity(model_wordbank_unilemmas, model_wordbank_unilemmas)
+
+#set to zero all the negative values in the matrix
+wordbank_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
+#also set the self weights to zero before normalizing
+diag(wordbank_zeroed) <- 0
+
+#"normalize the rows of the matrix, such that each row sums to one, and that any value DM(I,J) can be interpreted as the strength of the directional connection from word WI to word WJ" (Rotaru, 2016)
+wordbank_normal <- normalize_lengths(wordbank_zeroed)
+
 
 #write.csv(books_sim_wordbank, 'books_word2vec.csv')
 
