@@ -1,78 +1,1 @@
-uni_lemma,replacement
-baa baa,baa
-choo choo,choo
-cockadoodledoo,cockadoodledoo
-quack quack,quack
-uh oh,uhoh
-woof woof,woof
-yum yum,yum
-chicken (animal),chicken
-fish (animal),fish
-teddybear,teddy
-play dough,playdough
-toy (object),toy
-chicken (food),chicken
-drink (beverage),drink
-fish (food),fish
-french fries,fries
-green beans,beans
-ice cream,icecream
-orange (food),orange
-peanut butter,peanutbutter
-potato chip,NA
-water (beverage),NA
-dress (object),NA
-belly button,NA
-brush (object),NA
-can (object),NA
-comb (object),NA
-watch (object),NA
-high chair,NA
-living room,NA
-play pen,NA
-rocking chair,NA
-washing machine,NA
-lawn mower,NA
-rock (object),NA
-slide (object),NA
-swing (object),NA
-water (not beverage),NA
-gas station,NA
-work (place),NA
-babysitter's name,NA
-child's own name,NA
-pet's name,NA
-call on phone,NA
-give me five,NA
-gonna get you,NA
-go potty,NA
-good night,NA
-so big,NA
-thank you,NA
-this little piggy,NA
-turn around,NA
-clean (action),NA
-cover (action),NA
-drink (action),NA
-dry (action),NA
-open (action),NA
-paint (action),NA
-slide (action),NA
-swing (action),NA
-watch (action),NA
-work (action),NA
-all gone,NA
-clean (description),NA
-dry (description),NA
-hurt (description),NA
-little (description),NA
-orange (description),NA
-wet (description),NA
-when (question),NA
-where (question),NA
-which (question),NA
-back (location),NA
-next to,NA
-on top of,NA
-a lot,NA
-can (auxiliary),NA
+uni_lemma,replacement,baa baa,baa,choo choo,choo,cockadoodledoo,cockadoodledoo,quack quack,quack,uh oh,uhoh,woof woof,woof,yum yum,yum,chicken (animal),chicken,fish (animal),fish,fish - eatteddybear,teddy,play dough,playdough,toy (object),toy,chicken (food),chicken,drink (beverage),NA,fish (food),fish,french fries,fries,green beans,beans,ice cream,icecream,orange (food),orange,peanut butter,peanutbutter,potato chip,potatochip,water (beverage),water,dress (object),dress,belly button,bellybutton,brush (object),brush,can (object),can,comb (object),comb,watch (object),watch,high chair,highchair,highchairliving room,livingroom,livingroomplay pen,playpen,rocking chair,rockingchair,washing machine,washingmachine,lawn mower,lawnmower,lawnmowerrock (object),rock,slide (object),slide,swing (object),swing,water (not beverage),NA,gas station,gasstation,work (place),NA,babysitter's name,NA,child's own name,NA,pet's name,NA,call on phone,NA,give me five,NA,gonna get you,NA,go potty,NA,good night,good_night,so big,NA,thank you,NA,this little piggy,NA,turn around,NA,clean (action),clean,cover (action),cover,drink (action),drink,dry (action),dry,open (action),open,paint (action),paint,slide (action),slide,swing (action),swing,watch (action),watch,work (action),work,all gone,NA,clean (description),NA,dry (description),NA,hurt (description),hurt,little (description),little,orange (description),orange,orange-eatwet (description),wet,when (question),when,where (question),where,which (question),which,back (location),back,next to,next_to,on top of,NA,a lot,a_lot,can (auxiliary),can,
