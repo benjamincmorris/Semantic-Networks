@@ -54,9 +54,9 @@ shinyServer(function(input, output) {
     if (input$source == "W2V"){
       title <- "Normalized Cosine Similarity"
       high_point <- .2
-      start_point <- .08
+      start_point <- .1
       low_point <- 0
-      step_size <- .01
+      step_size <- .02
     # } else if (input$source == "PB"){
     #   title <- "Cosine Similarity"
     #   high_point <- 1
@@ -78,6 +78,9 @@ shinyServer(function(input, output) {
 
   ########## READ IN AOAS
   aoa_data <- reactive({
+    
+    req(input$source)
+    
     if (input$instrument  == "WS") {
       raw_aoas <- ws_aoas
     } else if (input$instrument == "WG" & input$measure == "comprehension" ) {
@@ -86,9 +89,16 @@ shinyServer(function(input, output) {
       raw_aoas <- wg_prod_aoas
     }
      
-    raw_aoas %>%
-      rename(label = definition) %>% 
-      mutate(aoa = round(aoa))  
+    if(input$source == "MFN") {
+      raw_aoas %>%
+        rename(label = definition) %>% 
+        mutate(aoa = round(aoa))  
+    }
+    else {
+      raw_aoas %>%
+        rename(label = uni_lemma) %>% 
+        mutate(aoa = round(aoa))  
+    }
   })  
   
   ########## READ IN ASSOCIATIONS
@@ -110,7 +120,7 @@ shinyServer(function(input, output) {
     assoc_mat <- as.matrix(select(assocs, -in_node))
     assoc_mat[lower.tri(assoc_mat)] <- NA
     
-    data.frame(assoc_mat, 
+    data.frame(assoc_mat, check.names = FALSE,
                in_node = assocs$in_node, 
                stringsAsFactors = FALSE)
   })
@@ -167,8 +177,6 @@ shinyServer(function(input, output) {
   
   ########## RENDER GRAPH
   output$network <- renderVisNetwork({
-    
-    
     
     visNetwork(assoc_nodes(), 
                rename(assoc_edges(), from = in_node, to = out_node), 
