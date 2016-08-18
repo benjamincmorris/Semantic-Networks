@@ -47,16 +47,29 @@ shinyServer(function(input, output) {
                    choices = choices,
                    selected = "production")
   })
+  
+  
+  output$assoc_control <- renderUI({
+    req(input$source)
+    if(input$source == "MFN") {
+    selectInput("assocs", "Association type",
+              choices = c("Conceptual" = "conceptual", 
+                          "Perceptual" = "perceptual", 
+                          "All" = "all"),
+              selected = "all")
+    }
+  })
+  
   ####### CHOOSE A SCALE FOR CUTOFF
   output$cutoff <- renderUI({
     req(input$source)
     
     if (input$source == "W2V"){
       title <- "Normalized Cosine Similarity"
-      high_point <- .2
+      high_point <- .3
       start_point <- .1
       low_point <- 0
-      step_size <- .02
+      step_size <- .05
     # } else if (input$source == "PB"){
     #   title <- "Cosine Similarity"
     #   high_point <- 1
@@ -141,19 +154,24 @@ shinyServer(function(input, output) {
   
   ########## PARSE EDGE DATA
   assoc_edge_data <- reactive({
+    nodes <- assoc_nodes()
+    
     # get the matrix in an id-based form
     assoc_mat() %>%
       gather(out_node, width, -in_node) %>%
-      filter(!is.na(width)) %>%
+      filter(!is.na(width), in_node %in% nodes$label, 
+             out_node %in% nodes$label) %>%
       rename(label = in_node) %>%
-      left_join(assoc_nodes()) %>%
+      left_join(nodes) %>%
       select(-label) %>%
       rename(in_node = id, 
              label = out_node) %>%
-      left_join(assoc_nodes()) %>%
+      select(label, width, in_node) %>%
+      left_join(nodes) %>%
       select(-label) %>%
       rename(out_node = id) %>%
-      select(in_node, out_node, width)
+      select(in_node, out_node, width) %>%
+      filter(in_node != out_node)
   })
       
   ########## FILTER EDGES 
@@ -161,8 +179,6 @@ shinyServer(function(input, output) {
     req(input$weighted)
     
     scaling = ifelse(input$source == "W2V", 15, 1)
-    
-    #print(assoc_nodes())
     
     edges <- assoc_edge_data() %>%
       mutate(width = scaling*width) %>%
@@ -173,16 +189,16 @@ shinyServer(function(input, output) {
     } else {
       edges %>% select(-width) 
     }
+    
   })
   
   ########## RENDER GRAPH
   output$network <- renderVisNetwork({
-    
     visNetwork(assoc_nodes(), 
                rename(assoc_edges(), from = in_node, to = out_node), 
                width = "100%", height="100%") %>%
       visPhysics(stabilization = TRUE) %>%
-      visEdges(smooth = FALSE, selfReferenceSize= FALSE)
+     visEdges(smooth = FALSE, selfReferenceSize= FALSE)
     
   })
   
