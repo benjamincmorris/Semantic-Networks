@@ -16,6 +16,8 @@ suppressPackageStartupMessages(library(shinyBS))
 suppressPackageStartupMessages(library(visNetwork))
 suppressPackageStartupMessages(library(langcog))
 suppressPackageStartupMessages(library(tsne))
+suppressPackageStartupMessages(library(networkD3))
+suppressPackageStartupMessages(library(igraph))
 
 #wordbank
 # https://github.com/langcog/wordbank
@@ -25,8 +27,6 @@ english_items <- get_item_data('English', 'WS') %>%
   filter(type =='word') %>%
   select(uni_lemma) %>%
   distinct() 
-
-categories <- english_items %>%
 #NOTE: This drops "an" from the cdi. Might be other cases where two definitions map onto the same uni_lemma
 
 
@@ -117,6 +117,18 @@ diag(wordbank_zeroed) <- 0
 wordbank_normal <- normalize_lengths(wordbank_zeroed)
 hist(wordbank_normal)
 
+
+#set a cutoff for edge connection, then make a graph
+wordbank_connected <- ifelse(wordbank_sim < .1, 0, wordbank_sim)
+wordbank_graph <- graph_from_adjacency_matrix(wordbank_connected,mode="undirected",weighted=TRUE)
+
+distance_table(wordbank_graph, direct=FALSE)
+mean_distance(wordbank_graph, direct=FALSE)
+shortest_paths(wordbank_graph, from= "book", to= "milk", weights= NULL)
+
+farthest_vertices(wordbank_graph)
+
+
 # Rotaru 2016 also does the following step: "(f) consider the discrete Markov chain associated with DM, which we denote as MARKOV(DM), and compute the state of MARKOV(DM) at steps K = 1 through K = 7, namely SK(DM); (g) for each word W and each K between 1 and 7"
 
 #write the matirx for visualization
@@ -124,6 +136,8 @@ hist(wordbank_normal)
 # until you manually enter 'in_node' (without quotes) as the value for the first cell of the data sheet.
 #write.csv(wordbank_normal, file= 'shiny_apps/networks/assocs/w2v_assocs.csv')
 ```
+
+
 
 
 ```{r, echo=FALSE}

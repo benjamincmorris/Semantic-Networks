@@ -2,13 +2,13 @@
 
 import nltk
 from nltk.corpus.reader import CHILDESCorpusReader
-corpus_root = ('/Users/bmorris/desktop/uchicago/childes/')
+corpus_root = ('/Users/bmorris/documents/uchicago/childes/')
 
 def remove_non_ascii_1(text):
     return ''.join(i for i in text if ord(i)<128)
 
-providence = CHILDESCorpusReader(corpus_root, 'Providence/.*.xml')
-full_CHILDES = CHILDESCorpusReader(corpus_root, 'CHILDES_copora/.*.xml')
+providence = CHILDESCorpusReader(corpus_root, 'childes_corpora/Providence/.*.xml')
+childes = CHILDESCorpusReader(corpus_root, 'childes_corpora/.*.xml')
 
 
 #display the files names for Providence
@@ -21,7 +21,7 @@ len(providence.fileids())
 corpus_data = providence.corpus(providence.fileids())
 print(corpus_data[0]['Lang'])
 for key in sorted(corpus_data[1].keys()):
-    print(key,": ", corpus_data[1][key])
+    print(key ,":", corpus_data[1][key])
 
 #Printing participant information. CHI (target child), MOT(mother), INV (investigator)
 #something is wrong in my print
@@ -34,11 +34,14 @@ for this_corpus_participants in corpus_participants[:2]:
 #printing words
 providence.words('Providence/Alex/ale01.xml')
 
+
 #printing sentences
 providence.sents('Providence/Alex/ale01.xml')[0:100]
 
 #specifying the speaker
-providence.words('Providence/Alex/ale01.xml', speaker=['OPE'])
+providence.words(speaker=['MOT'])
+providence.words(speaker = ('MOT', 'OPE', 'INV'))
+
 
 #tagged_words() and tagged_sents() return the usual (word,pos) tuple lists. POS tags in the CHILDES are automatically assigned by MOR and POST programs (MacWhinney, 2000).
 providence.tagged_words('Providence/Alex/ale01.xml')[:30]
@@ -80,12 +83,20 @@ file.write(providence_ale01)
 file.close()
 
 
+#child produced words...
+kid_pro=' '.join(childes.words(speaker='CHI'))
+
 #get all childes copora
-full_CHILDES = CHILDESCorpusReader(corpus_root, 'CHILDES_copora/.*.xml')
-CHILDES_all=' '.join(full_CHILDES.words())
+CHILDES_all=' '.join(childes.words())
 CHILDES_all_dropped = remove_non_ascii_1(CHILDES_all)
 file= open("CHILDES_words_only.txt", "w")
 file.write(CHILDES_all_dropped)
 file.close()
 
+
+#other schtuff, counting words.
+for this_file in childes.fileids()[:10]:
+    print(childes.corpus(this_file)[0]['Corpus'], childes.corpus(this_file)[0]['Media'])
+    print("num of words: %i" % len(childes.words(this_file)))
+    print("num of sents: %i" % len(childes.sents(this_file)))
 
