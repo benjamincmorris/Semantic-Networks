@@ -21,8 +21,6 @@ suppressPackageStartupMessages(library(igraph))
 
 #wordbank
 # https://github.com/langcog/wordbank
-english_data <- get_instrument_data("English", "WS", iteminfo=TRUE)
-
 english_items <- get_item_data('English', 'WS') %>%
   filter(type =='word') %>%
   select(uni_lemma) %>%
@@ -126,6 +124,8 @@ distance_table(wordbank_graph, direct=FALSE)
 mean_distance(wordbank_graph, direct=FALSE)
 shortest_paths(wordbank_graph, from= "book", to= "milk", weights= NULL)
 
+igr
+
 farthest_vertices(wordbank_graph)
 
 
@@ -215,6 +215,67 @@ wordbank_normal <- normalize_lengths(wordbank_zeroed)
 #write.csv(books_sim_wordbank, 'books_word2vec.csv')
 
 ```
+
+```{r}
+english_data <- get_instrument_data("English", "WS", administrations = TRUE,
+                                    iteminfo=TRUE, ) %>%
+  filter(type == "word", uni_lemma %in% rownames(wordbank_normal))
+
+english_kids <- get_administration_data(language = "English", 
+                                        original_ids = TRUE) %>%
+  distinct(original_id, age, longitudinal) %>%
+  filter(longitudinal) 
+  repeated_administrations <- english_kids %>%
+  group_by(original_id) %>%
+  summarise(n = n())
+
+john_data <- english_data %>%
+  filter(data_id == 51699) %>%
+  filter(value == "produces") 
+
+longitudinal_kids <- english_data %>%
+  left_join(english_kids) %>%
+  filter(longitudinal) %>%
+  distinct(original_id, age) %>%
+  group_by(original_id) %>%
+  summarise(n_ages = n())
+
+
+sample_transitivity <- function(num_nodes) {
+  
+  
+random_nodes <- sample(all_items, num_nodes)
+
+
+random_graph <- graph_from_adjacency_matrix(
+  wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
+               colnames(wordbank_normal) %in% random_nodes],
+  weighted = TRUE, mode = "undirected")
+
+transitivity(random_graph)
+  
+}
+
+test <- replicate(100, sample_transitivity(479))
+
+
+
+john_graph <- graph_from_adjacency_matrix(
+  wordbank_normal[rownames(wordbank_normal) %in% john_data$uni_lemma,
+               colnames(wordbank_normal) %in% john_data$uni_lemma],
+  weighted = TRUE, mode = "undirected")
+
+#set a cutoff for edge connection, then make a graph
+wordbank_connected <- ifelse(wordbank_sim < .1, 0, wordbank_sim)
+wordbank_graph <- graph_from_adjacency_matrix(wordbank_connected,mode="undirected",weighted=TRUE)
+
+
+all_items <- rownames(wordbank_normal)
+
+# random set of words of matching size
+sample(all_items, unique(john_data$production))
+
+````
 
 ```{r, echo= FALSE}
 #run the networks shiny app
