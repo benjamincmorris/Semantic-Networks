@@ -198,7 +198,11 @@ shinyServer(function(input, output) {
                  Target = "out_node", Value = "width", NodeID = "label",
                  linkWidth = JS("function(d) { return d.value; }"),
                  Group = "group", opacity = .8, zoom = TRUE, opacityNoHover = .8,
-                 legend = input$group != "identity", charge = -60)
+                 legend = input$group != "identity",
+                 linkColour = "#cccccc", fontSize = 10,
+                 colourScale = ifelse(length(unique(assoc_nodes()$group)) > 10, 
+                                      JS("d3.scale.category20()"),
+                                      JS("d3.scale.category10()")))
   })
   
   # output$network <- renderVisNetwork({
