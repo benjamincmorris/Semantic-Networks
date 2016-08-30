@@ -18,6 +18,9 @@ suppressPackageStartupMessages(library(langcog))
 suppressPackageStartupMessages(library(tsne))
 suppressPackageStartupMessages(library(networkD3))
 suppressPackageStartupMessages(library(igraph))
+suppressPackageStartupMessages(library(lazyeval))
+suppressPackageStartupMessages(library(tidyr))
+
 
 #wordbank
 # https://github.com/langcog/wordbank
@@ -25,7 +28,7 @@ eng_data <- get_instrument_data("English", "WS")
 
 item_info <- read_csv("~/downloads/[English_WS].csv") %>%
  mutate(num_item_id = as.numeric(sub("item_", "", itemID))) %>%
- select(type, category, uni_lemma, num_item_id)
+ select(type, category, uni_lemma, num_item_id) 
 
 eng_iteminfo_data <- left_join(eng_data, item_info)
 
@@ -74,104 +77,8 @@ plot(filter_to_rownames(model,names(some_eat)))
 missing_items <- read_csv("missing_lemmas.csv")
 
 all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
-                        eng_iteminfo_data$uni_lemma))
-
-
-#filter the matrix to only include CDI words
-model_wordbank <-model[rownames(model) %in% all_cdi_words]
-model_wordbank_sorted <-model_wordbank[sort(rownames(model_wordbank)),]
-
-#Special cases
-special_cases <- missing_items %>%
-  filter(!is.na(addword) | !is.na(subword))
-
-rename_cases <- missing_items %>%
-  filter(is.na(addword) & is.na(subword),
-         !is.na(word)) %>%
-  arrange(uni_lemma)
-
-extra_rows <- rownames(model_wordbank_sorted)  %in% rename_cases$word
-rownames(model_wordbank_sorted)[extra_rows] <- rename_cases$uni_lemma
-
-special_case_vector <- function(special_case) {
-  if(!is.na(special_case$addword)) {
-   model_wordbank[special_case$word,] + 
-      model_wordbank[special_case$addword,]
-  } else {
-    model_wordbank[special_case$word,] - 
-      model_wordbank[special_case$subword,]
-  }
-}
-
-special_case_vectors <- t(sapply(1:nrow(special_cases), 
-                               function(x) special_case_vector(special_cases[x,]), 
-                               simplify = "matrix"))
-rownames(special_case_vectors) <- special_cases$uni_lemma
-
-model_wordbank_specialcases <- rbind(model_wordbank_sorted, special_case_vectors)
-
-model_wordbank_unilemmas <- as.VectorSpaceModel(model_wordbank_specialcases[rownames(model_wordbank_specialcases)
-                                                        %in% eng_iteminfo_data$uni_lemma, ])
-
-
-#create word similarity matrix
-wordbank_sim <- cosineSimilarity(model_wordbank_unilemmas, model_wordbank_unilemmas)
-
-#set to zero all the negative values in the matrix
-wordbank_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
-#also set the self weights to zero before normalizing
-diag(wordbank_zeroed) <- 0
-
-#"normalize the rows of the matrix, such that each row sums to one, and that any value DM(I,J) can be interpreted as the strength of the directional connection from word WI to word WJ" (Rotaru, 2016)
-wordbank_normal <- normalize_lengths(wordbank_zeroed)
-hist(wordbank_normal)
-
-
-
-
-#set a cutoff for edge connection, then make a graph
-wordbank_connected <- ifelse(wordbank_sim < .1, 0, wordbank_sim)
-wordbank_graph <- graph_from_adjacency_matrix(wordbank_connected,mode="undirected",weighted=TRUE)
-
-distance_table(wordbank_graph, direct=FALSE)
-mean_distance(wordbank_graph, direct=FALSE)
-shortest_paths(wordbank_graph, from= "book", to= "milk", weights= NULL)
-
-farthest_vertices(wordbank_graph)
-
-# Rotaru 2016 also does the following step: "(f) consider the discrete Markov chain associated with DM, which we denote as MARKOV(DM), and compute the state of MARKOV(DM) at steps K = 1 through K = 7, namely SK(DM); (g) for each word W and each K between 1 and 7"
-
-#write the matirx for visualization
-#NOTE:if you rewrite the csv file, the network will NOT load when you run the shiny app
-# until you manually enter 'in_node' (without quotes) as the value for the first cell of the data sheet.
-#write.csv(wordbank_normal, file= 'shiny_apps/networks/assocs/w2v_assocs.csv')
-```
-
-
-
-
-```{r, echo=FALSE}
-#Picture book training NOT USING THIS AT THE MOMENT
-#NOTE: the picture book corpus needs cleaning, remove titles/authors
-model = train_word2vec("100Books.txt",output="books_vectors.bin",threads = 3,vectors = 100,window=6, cbow=1, min_count = 10, force= TRUE)
-
-#create word similarity matrix
-books_sim <- cosineSimilarity(model,model)
-
-#filter the matrix to only include CDI words
-books_sim_wordbank <-books_sim[rownames(books_sim) %in% english_items$uni_lemma,
-            colnames(books_sim) %in% english_items$uni_lemma]
-books_scaled <- ((scale(books_sim_wordbank)))
-
-
-english_items_missing <- english_items %>%
-  filter(!uni_lemma %in% rownames(model)) %>%
-  write_csv("book_missing_lemmas.csv")
-
-missing_items <- read_csv("missing_lemmas.csv")
-
-all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
                         english_items$uni_lemma))
+
 
 #filter the matrix to only include CDI words
 model_wordbank <-model[rownames(model) %in% all_cdi_words]
@@ -222,9 +129,17 @@ diag(wordbank_zeroed) <- 0
 wordbank_normal <- normalize_lengths(wordbank_zeroed)
 
 
-#write.csv(books_sim_wordbank, 'books_word2vec.csv')
 
+
+
+# Rotaru 2016 also does the following step: "(f) consider the discrete Markov chain associated with DM, which we denote as MARKOV(DM), and compute the state of MARKOV(DM) at steps K = 1 through K = 7, namely SK(DM); (g) for each word W and each K between 1 and 7"
+
+#write the matirx for visualization
+#NOTE:if you rewrite the csv file, the network will NOT load when you run the shiny app
+# until you manually enter 'in_node' (without quotes) as the value for the first cell of the data sheet.
+#write.csv(wordbank_normal, file= 'shiny_apps/networks/assocs/w2v_assocs.csv')
 ```
+
 
 
 
@@ -234,12 +149,8 @@ english_data <- get_instrument_data("English", "WS", administrations = TRUE,
                                     iteminfo=TRUE) %>%
   filter(type == "word", uni_lemma %in% rownames(wordbank_normal))
 
-
-
-english_kids <- get_administration_data(language = "English")
-                                        original_ids = TRUE) %>%
-  distinct(original_id, age, longitudinal) %>%
-  filter(longitudinal) 
+english_kids <- get_administration_data(language = "English", 
+                                  form = "WS", original_ids = TRUE)
 
 all_items <- rownames(wordbank_normal)
 
@@ -272,19 +183,12 @@ sample_transitivity <- function(num_nodes) {
 #       transitivity(random_graph)
 # }
 
-ptm <- proc.time()
 run_sim <- function(i) {
   replicate(1000,sample_transitivity(i))
 }       
 
-# run_sim_threshold <- function(i) {
-#   replicate(1000,sample_transitivity_threshold(i))
-# }       
-
-
 #run from 2:653
 # random_nets <- do.call("rbind", sapply(2:653, function(i) run_sim(i), simplify = FALSE))
-# proc.time() - ptm
 # write.csv(random_nets, 'random_transitivity.csv')
 random_nets <- read_csv('random_transitivity.csv')
 
@@ -300,20 +204,6 @@ mean.random <- apply(random_nets_dropped, 1, function(x) mean(x, na.rm = TRUE))
 random_trans <- data.frame(mean.random, upper.random, lower.random)
 random_trans$num_words <- seq.int(nrow(random_nets))
 random_trans$num_words <- (random_trans$num_words + 1)
-
-
-ggplot(aes(x = num_words, y = mean.random), data = random_trans) + 
-  geom_ribbon(aes(ymax = upper.random, ymin = lower.random)) +
-  geom_ribbon(aes(x = production, y = mean, ymax= ci_upper, ymin=ci_lower),
-              data = edited_trans_prod, color='red') +
-  geom_smooth() +
-  theme_bw()
-
-
-transitivity_production[-c(1,2, 654:679),]
-edited_trans_prod <- transitivity_production[-c(1,2, 654:679),]
-  
-
 
 #function to call for just one kid's data
 pull_one <- function(id) {
@@ -332,11 +222,6 @@ one_transitivity <- function(id) {
   transitivity(one_graph)
 }
 
-#problem kid has just one word --> breaks code because can't build net
-one_transitivity(51795)
-#if three words, outputs NaN
-one_transitivity(51826)
-
 
 #start a data frame
 id <- 51699
@@ -345,64 +230,38 @@ transitivity_df <- data_frame(id, transitivity)
 
 #loop in each kid's CC (17 minutes)
 #slow, because for loop, using pull_one for comparison, and rbinding
-for (i in 51700:57474) {
-  if (nrow(pull_one(i))==1) {
-    transitivity_df <- rbind(transitivity_df, c(i, NA))
-  } else 
-    transitivity_df <- rbind(transitivity_df, c(i, one_transitivity(i)))
-}
-
-write.csv(transitivity_df, 'individ_CC.csv')
+# for (i in 51700:57474) {
+#   if (nrow(pull_one(i))==1) {
+#     transitivity_df <- rbind(transitivity_df, c(i, NA))
+#   } else 
+#     transitivity_df <- rbind(transitivity_df, c(i, one_transitivity(i)))
+# }
+# 
+# write.csv(transitivity_df, 'individ_CC.csv')
 
 transitivity_df <- read_csv('individ_CC.csv') %>%
   select(-X1)
 
 transitivity_full <- left_join(transitivity_df, english_kids, by= c('id'='data_id'))
 
-transitivity_longitudinal <- transitivity_full %>%
-  filter(longitudinal, form == "WS") %>%
-  select(-id, -comprehension) %>%
-  mutate(age = as.numeric(age)) %>%
-  mutate(age = if_else(age == 17 | age == 29, age - 1, age)) %>%
-  gather(measure, value, production, transitivity) %>%
-  spread(age, value)
-
-correlations_longitudinal <- transitivity_longitudinal %>%
-  group_by(measure) %>%
-  summarise(cor = cor(`16`, `28`, use = "complete"))
-
-
-
-ggplot(aes(x = age, y = transitivity), data = transitivity_full) + 
-  geom_jitter() +
-  theme_bw()
-
-transitivity_age <- transitivity_full %>%
-  filter(!is.na(age)) %>%
-  group_by(age) %>%
-  multi_boot_standard("transitivity", na.rm = TRUE) 
-
-ggplot(aes(x = age, y = mean), data = transitivity_age) + 
-  geom_pointrange(aes(ymax = ci_upper, ymin = ci_lower)) +
-  geom_smooth() +
-  theme_bw()
 
 transitivity_production <- transitivity_full %>%
   filter(!is.na(production)) %>%
   group_by(production) %>%
+  rename(num_words=production) %>%
   multi_boot_standard("transitivity", na.rm = TRUE) 
 
-ggplot(aes(x = production, y = mean), data = transitivity_production) + 
+ggplot(aes(x = num_words, y = mean), data = transitivity_production) + 
   geom_pointrange(aes(ymax = ci_upper, ymin = ci_lower)) +
   geom_smooth() +
   theme_bw()
 
 
-english_kids <- get_administration_data(language = "English", form = "WS", original_ids = TRUE)
 
 
 
 
+#looking at one kid
 john_data <- eng_iteminfo_data %>%
   filter(data_id == 51699) %>%
   filter(value == "produces") 
@@ -431,7 +290,17 @@ longitudinal_kids <- english_data %>%
   group_by(original_id) %>%
   summarise(n_ages = n())
 
+transitivity_longitudinal <- transitivity_full %>%
+  filter(longitudinal, form == "WS") %>%
+  select(-id, -comprehension) %>%
+  mutate(age = as.numeric(age)) %>%
+  mutate(age = if_else(age == 17 | age == 29, age - 1, age)) %>%
+  gather(measure, value, production, transitivity) %>%
+  spread(age, value)
 
+correlations_longitudinal <- transitivity_longitudinal %>%
+  group_by(measure) %>%
+  summarise(cor = cor(`16`, `28`, use = "complete"))
 
 
 ```
@@ -455,15 +324,35 @@ sample_degree <- function(num_nodes) {
 }
 
 
-ptm <- proc.time()
 run_sim_degree <- function(i) {
   replicate(1000,sample_degree(i))
 }       
-
 #2:653
-random_nets_degree <- do.call("rbind", sapply(2:653, function(i) run_sim_degree(i), simplify = FALSE))
-proc.time() - ptm
+# random_nets_degree <- do.call("rbind", sapply(2:653, function(i) run_sim_degree(i), simplify = FALSE))
 
+
+# write.csv(random_nets_degree, 'random_degree.csv')
+random_nets_degree <- read_csv('random_degree.csv')
+
+#we will need to first drop the size column so it's not included
+random_nets_degree_dropped <- random_nets_degree %>%
+  select(-X1)
+  
+upper.random <- apply(random_nets_degree_dropped, 1, 
+                      function(x) quantile(x, probs=.975,na.rm = TRUE))
+lower.random <- apply(random_nets_degree_dropped, 1, 
+                      function(x) quantile(x, probs=.025,na.rm = TRUE))
+mean.random <- apply(random_nets_degree_dropped, 1, 
+                     function(x) mean(x, na.rm = TRUE))
+random_degree <- data.frame(mean.random, upper.random, lower.random)
+random_degree$num_words <- seq.int(nrow(random_nets_degree))
+random_degree$num_words <- (random_degree$num_words + 1)
+
+
+random_degree_avg <- random_degree %>%
+  mutate(mean = mean.random/num_words,
+         ci_upper = upper.random/num_words,
+         ci_lower = lower.random/num_words)
 
 
 
@@ -477,36 +366,28 @@ one_degree <- function(id) {
   mean(graph.strength(one_graph))
 }
 
-#problem kid has just one word --> breaks code because can't build net
-one_degree(51795)
-#if three words, outputs a value
-one_degree(51699)
-
 #start a data frame
-id <- 51699
-degree <- one_degree(51699) 
-degree_df <- data_frame(id, degree)
-
+# id <- 51699
+# degree <- one_degree(51699) 
+# degree_df <- data_frame(id, degree)
 #loop in each kid's CC (17 minutes)
 #slow, because for loop, using pull_one for comparison, and rbinding
 # 51700:57474
-for (i in 51700:57474) {
-  if (nrow(pull_one(i))==1) {
-    degree_df <- rbind(degree_df, c(i, NA))
-  } else 
-    degree_df <- rbind(degree_df, c(i, one_degree(i)))
-}
+# for (i in 51700:57474) {
+#   if (nrow(pull_one(i))==1) {
+#     degree_df <- rbind(degree_df, c(i, NA))
+#   } else 
+#     degree_df <- rbind(degree_df, c(i, one_degree(i)))
+# }
 
-write.csv(degree_df, 'individ_degree_strength.csv')
+#write.csv(degree_df, 'individ_degree_strength.csv')
 
 degree_df <- read_csv('individ_degree_strength.csv') %>%
   select(-X1)
 
-#degree_full <- left_join(degree_df, english_kids, by= c('id'='data_id'))
 degree_str_full <- left_join(degree_df, english_kids, by= c('id'='data_id'))
 
-hist(degree_str_full$degree)
-
+#longitudinal
 degree_longitudinal <- degree_str_full %>%
   filter(longitudinal, form == "WS") %>%
   select(-id, -comprehension) %>%
@@ -520,25 +401,9 @@ correlations_longitudinal <- degree_longitudinal %>%
   summarise(cor = cor(`16`, `28`, use = "complete"))
 correlations_longitudinal
 
-ggplot(aes(x = age, y = degree), data = degree_str_full) + 
-  geom_jitter() +
-  theme_bw()
 
-ggplot(aes(x = production, y = degree), data = degree_str_full) + 
-  geom_jitter() +
-  theme_bw()
 
-degree_age <- degree_str_full %>%
-  filter(!is.na(age)) %>%
-  group_by(age) %>%
-  multi_boot_standard("degree", na.rm = TRUE) 
-
-ggplot(aes(x = age, y = mean), data = degree_age) + 
-  geom_pointrange(aes(ymax = ci_upper, ymin = ci_lower)) +
-  geom_smooth() +
-  theme_bw()
-
-degree_production <- degree_full %>%
+degree_production <- degree_str_full %>%
   filter(!is.na(production)) %>%
   group_by(production) %>%
   multi_boot_standard("degree", na.rm = TRUE) 
@@ -548,10 +413,19 @@ degree_production_avg <- degree_production %>%
          ci_upper = ci_upper/production,
          ci_lower = ci_lower/production)
 
-ggplot(aes(x = production, y = mean), data = degree_production_avg) + 
-  geom_pointrange(aes(ymax = ci_upper, ymin = ci_lower)) +
+
+#match the names so that dataframes can be plotted together
+degree_production_avg2 <- degree_production_avg %>%
+  rename(num_words = production)
+
+ggplot(aes(x = num_words, y = mean), data = random_degree_avg) +
+  geom_ribbon(aes(ymax = ci_upper, ymin = ci_lower), fill='lightblue') +
+  geom_ribbon(aes(x = num_words, y = mean, ymax= ci_upper, ymin=ci_lower),
+              data = degree_production_avg2, fill='rosybrown') +
   geom_smooth() +
+  geom_smooth(data=degree_production_avg2, color= 'red') +
   theme_bw()
+
 ```
 
 
@@ -559,6 +433,42 @@ ggplot(aes(x = production, y = mean), data = degree_production_avg) +
 
 ```{r, echo=FALSE}
 ### GEODESICS ###
+#set a function for making a random graph of size N and computing geodesics
+
+random_net <- function(num_nodes) {
+    random_nodes <- sample(all_items, num_nodes)
+
+    random_graph <- graph_from_adjacency_matrix(
+        wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
+               colnames(wordbank_normal) %in% random_nodes],
+     weighted = TRUE, mode = "undirected")
+}
+
+run_sim_geo <- function(i) {
+  replicate(1000,average.path.length(random_net(i)))
+}     
+
+# ptm <- proc.time()
+# random_nets_geo2 <- do.call("rbind", sapply(2:653, function(i) run_sim_geo(i), simplify = FALSE))
+# proc.time() - ptm
+
+# write.csv(random_nets_geo, 'random_geo.csv')
+random_nets_geo <- read_csv('random_geo.csv') %>%
+  select(-X1)
+  
+upper.random <- apply(random_nets_geo, 1, 
+                      function(x) quantile(x, probs=.975,na.rm = TRUE))
+lower.random <- apply(random_nets_geo, 1, 
+                      function(x) quantile(x, probs=.025,na.rm = TRUE))
+mean.random <- apply(random_nets_geo, 1, 
+                     function(x) mean(x, na.rm = TRUE))
+random_geo <- data.frame(mean.random, upper.random, lower.random)
+random_geo$num_words <- seq.int(nrow(random_geo))
+random_geo$num_words <- (random_geo$num_words + 1)
+
+
+
+#### KID'S GEODESICS
 one_geodesic <- function(id) {
   one_graph <- graph_from_adjacency_matrix(
   wordbank_normal[rownames(wordbank_normal) %in% pull_one(id)$uni_lemma,
@@ -568,34 +478,25 @@ one_geodesic <- function(id) {
   average.path.length(one_graph)
 }
 
-#problem kid has just one word --> breaks code because can't build net
-one_geodesic(51795)
-#if three words, outputs a value
-one_geodesic(51699)
-
 #start a data frame
-id <- 51699
-geodesic <- one_geodesic(51699) 
-geodesic_df <- data_frame(id, geodesic)
-
-#loop in each kid's CC (17 minutes)
-#slow, because for loop, using pull_one for comparison, and rbinding
+# id <- 51699
+# geodesic <- one_geodesic(51699) 
+# geodesic_df <- data_frame(id, geodesic)
+# loop in each kid's CC (17 minutes)
+# slow, because for loop, using pull_one for comparison, and rbinding
 # 51700:57474
-for (i in 51700:57474) {
-  if (nrow(pull_one(i))==1) {
-    geodesic_df <- rbind(geodesic_df, c(i, NA))
-  } else 
-    geodesic_df <- rbind(geodesic_df, c(i, one_geodesic(i)))
-}
-
-write.csv(geodesic_df, 'individ_geodesic.csv')
+# for (i in 51700:57474) {
+#   if (nrow(pull_one(i))==1) {
+#     geodesic_df <- rbind(geodesic_df, c(i, NA))
+#   } else 
+#     geodesic_df <- rbind(geodesic_df, c(i, one_geodesic(i)))
+# }
+# write.csv(geodesic_df, 'individ_geodesic.csv')
 
 geodesic_df <- read_csv('individ_geodesic.csv') %>%
   select(-X1)
 
 geodesic_full <- left_join(geodesic_df, english_kids, by= c('id'='data_id'))
-
-hist(geodesic_full$geodesic)
 
 geodesic_longitudinal <- geodesic_full %>%
   filter(longitudinal, form == "WS") %>%
@@ -610,36 +511,408 @@ correlations_longitudinal <- geodesic_longitudinal %>%
   summarise(cor = cor(`16`, `28`, use = "complete"))
 correlations_longitudinal
 
-ggplot(aes(x = age, y = geodesic), data = geodesic_full) + 
-  geom_jitter() +
-  theme_bw()
-
-ggplot(aes(x = production, y = geodesic), data = geodesic_full) + 
-  geom_jitter() +
-  theme_bw()
-
-geodesic_age <- geodesic_full %>%
-  filter(!is.na(age)) %>%
-  group_by(age) %>%
-  multi_boot_standard("geodesic", na.rm = TRUE) 
-
-ggplot(aes(x = age, y = mean), data = geodesic_age) + 
-  geom_pointrange(aes(ymax = ci_upper, ymin = ci_lower)) +
-  geom_smooth() +
-  theme_bw()
-
 geodesic_production <- geodesic_full %>%
   filter(!is.na(production)) %>%
-  filter(production>10) %>%
+  #filter(production>1) %>%
   group_by(production) %>%
-  multi_boot_standard("geodesic", na.rm = TRUE) 
+  multi_boot_standard("geodesic", na.rm = TRUE)
 
-ggplot(aes(x = production, y = mean), data = geodesic_production) + 
-  geom_pointrange(aes(ymax = ci_upper, ymin = ci_lower)) +
-  geom_smooth() +
+ggplot(aes(x = num_words, y = mean.random), data = random_geo) +
+  geom_ribbon(aes(ymax = upper.random, ymin = lower.random), fill='lightgrey') +
+  geom_ribbon(aes(x = production, y = mean, ymax= ci_upper, ymin=ci_lower),
+              data = geodesic_production, fill='rosybrown') +
+  geom_smooth(color='black') +
+  geom_smooth(data=geodesic_production, aes(x=production, y=mean), color= 'red') +
   theme_bw()
 ```
 
+
+
+```{r, echo= FALSE}
+kids_word_order <- english_data %>%
+  group_by(uni_lemma) %>%
+  filter(value=='produces') %>%
+  filter(! is.na(uni_lemma)) %>%
+  summarize(count= n()) %>%
+  filter(uni_lemma %in% rownames(wordbank_normal)) %>%
+  mutate(count = count/5775) %>%
+  arrange(desc(count))
+
+ordered_words <- kids_word_order$uni_lemma
+
+build_net <- function(num_nodes) {
+    random_nodes <- ordered_words[1:num_nodes]
+    
+    random_graph <- graph_from_adjacency_matrix(
+        wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
+               colnames(wordbank_normal) %in% random_nodes],
+     weighted = TRUE, mode = "undirected")
+    random_graph
+}
+
+
+########## TRANSITIVITY ORDERED NETOWRKS ###################
+# ordered_nets_trans <- do.call("rbind", sapply(2:653, function(i) 
+#               transitivity(build_net(i)), simplify = FALSE))
+
+# write.csv(ordered_nets_trans, 'ordered_nets_trans.csv')
+ordered_nets_trans <- read_csv('ordered_nets_trans.csv') %>%
+  rename(num_words=X1, transitivity=V1) %>%
+  transmute(num_words=num_words+1, transitivity=transitivity)
+
+ggplot(aes(x = num_words, y = transitivity), data = ordered_nets_trans) + 
+  geom_ribbon(aes(x = num_words, y = mean, ymax= ci_upper, ymin=ci_lower),
+              data = transitivity_production, fill='rosybrown') +
+  geom_point(color='steelblue2') +
+  geom_smooth() +
+  geom_smooth(data = transitivity_production,aes(y=mean), color='red') +
+  geom_smooth(data = random_trans, aes(y=mean.random), color= 'black') +
+  theme_bw()
+
+
+
+
+########### DEGREE ORDERED NETWORKS #############
+# ordered_nets_degree <- do.call("rbind", sapply(2:653, function(i) 
+#               mean(graph.strength(build_net(i))), simplify = FALSE))
+
+# write.csv(ordered_nets_degree, 'ordered_nets_degree_str.csv')
+ordered_nets_degree_avg <- read_csv('ordered_nets_degree_str.csv') %>%
+  rename(num_words=X1, degree=V1) %>%
+  transmute(num_words=num_words+1, degree=degree) %>%
+  mutate(degree_avg = degree/num_words)
+
+ggplot(aes(x = num_words, y = degree_avg), data = ordered_nets_degree_avg) + 
+  geom_ribbon(aes(x = production, y = mean, ymax= ci_upper, ymin=ci_lower),
+              data = degree_production_avg, fill='rosybrown') +
+  geom_point(color='steelblue2') +
+  geom_smooth() +
+  geom_smooth(data = degree_production_avg,aes(x=production, y=mean), color='red') +
+  geom_smooth(data = random_degree_avg, aes(y=mean), color= 'black') +
+  theme_bw() +
+  coord_cartesian(ylim = c(0, .05)) 
+
+
+
+
+########### GEODESICS ORDERED NETWORKS #############
+# ordered_nets_geo <- do.call("rbind", sapply(2:653, function(i) 
+#               average.path.length(build_net(i)), simplify = FALSE))
+
+# write.csv(ordered_nets_geo, 'ordered_nets_geo.csv')
+ordered_nets_geo <- read_csv('ordered_nets_geo.csv') %>%
+  rename(num_words=X1, geo=V1) %>%
+  transmute(num_words=num_words+1, geo=geo)
+
+
+ggplot(aes(x = num_words, y = geo), data = ordered_nets_geo) + 
+  geom_ribbon(aes(x = production, y = mean, ymax= ci_upper, ymin=ci_lower),
+              data = geodesic_production, fill='rosybrown') +
+  geom_ribbon(aes(x= num_words, y = mean.random,
+                  ymax = upper.random, ymin = lower.random), fill='skyblue') +
+  geom_ribbon(aes(x = num_words, y = mean.random, ymax = upper.random, 
+                  ymin = lower.random), data = random_geo, fill= 'lightgrey') +
+  geom_point(color='steelblue2') +
+  geom_smooth() +
+  geom_smooth(data = geodesic_production,aes(x=production, y=mean), color='red') +
+  geom_smooth(data = random_geo, aes(x=num_words, y=mean.random), color= 'black') +
+  theme_bw() +
+  coord_cartesian(ylim= c(1.1, 1.65))
+```
+
+
+
+
+```{r, echo=FALSE}
+ordered_words
+ordered_words_swap <- kids_word_order
+ordered_words_swap$rows <- seq.int(nrow(ordered_words_swap))
+
+ordered_words_swap$rows <- ifelse(ordered_words_swap$rows<201, 
+                          ordered_words_swap$rows + 700, ordered_words_swap$rows)
+ordered_words_swap$rows <- ifelse(ordered_words_swap$rows>200 & 
+                          ordered_words_swap$rows<401, 
+                          ordered_words_swap$rows - 200, ordered_words_swap$rows)
+ordered_words_swap$rows <- ifelse(ordered_words_swap$rows>700, 
+                          ordered_words_swap$rows - 500, ordered_words_swap$rows)
+
+reordered_words <- ordered_words_swap %>%
+  arrange(rows)
+reordered_words <- reordered_words$uni_lemma
+
+build_net_reordered <- function(num_nodes) {
+    random_nodes <- reordered_words[1:num_nodes]
+    
+    random_graph <- graph_from_adjacency_matrix(
+        wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
+               colnames(wordbank_normal) %in% random_nodes],
+     weighted = TRUE, mode = "undirected")
+    random_graph
+}
+
+
+########## TRANSITIVITY RE-ORDERED NETOWRKS ###################
+# reordered_trans <- do.call("rbind", sapply(2:653, function(i) 
+#               transitivity(build_net_reordered(i)), simplify = FALSE))
+# write.csv(reordered_trans, 'reordered_trans.csv')
+
+reordered_trans <- read_csv('reordered_trans.csv') %>%
+  rename(num_words=X1, transitivity=V1) %>%
+  transmute(num_words=num_words+1, transitivity=transitivity)
+
+ggplot(aes(x = num_words, y = mean), data = transitivity_production) + 
+  geom_ribbon(data = random_trans, aes(x= num_words, y=mean.random, 
+              ymax=upper.random, ymin=lower.random),fill= 'lightgrey') +
+  geom_smooth(data = random_trans, aes(y=mean.random), color= 'black') +
+  geom_ribbon(aes(ymax= ci_upper, ymin=ci_lower), fill='rosybrown') +
+  geom_point(aes(x = num_words, y = transitivity),
+             data = ordered_nets_trans, color = 'green') +
+  geom_point(aes(x = num_words, y = transitivity), data = reordered_trans,
+       color= 'steelblue2') +
+  geom_smooth(data = reordered_trans,aes(y=transitivity), color='blue') +
+  geom_smooth(color='red') +
+  geom_smooth(aes(y = transitivity), data = ordered_nets_trans, color='forestgreen') +
+  coord_cartesian(ylim= c(.6,.9)) +
+  scale_x_continuous(breaks = seq(0, 650, 20)) +
+  theme_bw()
+```
+
+
+```{r, echo= false}
+###### building ordered networks probablisitically ##########
+build_net_prob <- function(num_nodes) {
+    random_nodes <- kids_word_order %>%
+      sample_n(num_nodes, weight = exp(100*count)) 
+    
+    random_nodes <- as.vector(random_nodes$uni_lemma)
+    
+    random_graph <- graph_from_adjacency_matrix(
+        wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
+               colnames(wordbank_normal) %in% random_nodes],
+     weighted = TRUE, mode = "undirected")
+    random_graph
+}
+
+
+run_prob_sim <- function(i, FUN, iterations) {
+  replicate(iterations, FUN(build_net_prob(i)))
+}       
+
+run_prob_sim(30, function(net) mean(graph.strength(net)), 10)
+
+
+# Degree for a network built probabilistically
+# prob_degree <- do.call("rbind", sapply(2:653, function(i) 
+#   run_prob_sim(i, function(net) mean(graph.strength(net)), 100), simplify = FALSE))
+prob_degree <- read_csv('prob_degree.csv') %>%
+  select(-X1)
+  
+upper.random <- apply(prob_degree, 1, 
+                      function(x) quantile(x, probs=.975,na.rm = TRUE))
+lower.random <- apply(prob_degree, 1, 
+                      function(x) quantile(x, probs=.025,na.rm = TRUE))
+mean.random <- apply(prob_degree, 1, 
+                     function(x) mean(x, na.rm = TRUE))
+prob_degree <- data.frame(mean.random, upper.random, lower.random)
+prob_degree$num_words <- seq.int(nrow(prob_degree))
+prob_degree$num_words <- (prob_degree$num_words + 1)
+
+prob_degree_avg <- prob_degree %>%
+  mutate(mean = mean.random/num_words,
+         ci_upper = upper.random/num_words,
+         ci_lower = lower.random/num_words)
+
+ggplot(aes(x = production, y = mean), data = degree_production_avg) + 
+  geom_ribbon(data=random_degree_avg, aes(x=num_words, y=mean, ymax=ci_upper,
+                                          ymin=ci_lower), color='lightgrey') +
+  geom_ribbon(aes(ymax= ci_upper, ymin=ci_lower), fill='rosybrown') +
+  geom_ribbon(aes(x=num_words, y=mean, ymax=ci_upper, ymin=ci_lower),
+              data=prob_degree_avg, fill='steelblue') +
+  geom_smooth(data=random_degree_avg, aes(x=num_words, y=mean), color='black') +
+  geom_smooth(color='red') +
+  #geom_smooth(aes(x=num_words, y=mean), data=prob_degree_avg, color='blue') +
+  coord_cartesian(ylim=c(.01, .05)) +
+  theme_bw()
+
+ggplot(aes(x = production, y = mean), data = degree_production_avg) + 
+  geom_pointrange(data=random_degree_avg, aes(x=num_words, y=mean, ymax=ci_upper,
+                                          ymin=ci_lower), color='lightgrey') +
+  geom_pointrange(aes(ymax= ci_upper, ymin=ci_lower), color='darkred', size = .2) +
+  geom_pointrange(aes(x=num_words, y=mean, ymax=ci_upper, ymin=ci_lower),
+              data=prob_degree_avg, color='steelblue', size = .2) +
+  #geom_smooth(data=random_degree_avg, aes(x=num_words, y=mean), color='black') +
+  #geom_smooth(color='red') +
+  #geom_smooth(aes(x=num_words, y=mean), data=prob_degree_avg, color='blue') +
+  coord_cartesian(ylim=c(.01, .05)) +
+    scale_x_continuous(limits = c(10, 650)) +
+  theme_bw()
+
+
+#transitivity for probablistic networks
+prob_transitivity <- do.call("rbind", sapply(2:653, function(i) 
+  run_prob_sim(i, transitivity, 100), simplify = FALSE))
+
+
+#geodesics for probablisitic networks
+# prob_geodesics <- do.call("rbind", sapply(2:653, function(i) 
+#   run_prob_sim(i, average.path.length, 100), simplify = FALSE))
+prob_geo <- read_csv('prob_geodesics.csv') %>%
+  select(-X1)
+  
+upper.random <- apply(prob_geo, 1, 
+                      function(x) quantile(x, probs=.975,na.rm = TRUE))
+lower.random <- apply(prob_geo, 1, 
+                      function(x) quantile(x, probs=.025,na.rm = TRUE))
+mean.random <- apply(prob_geo, 1, 
+                     function(x) mean(x, na.rm = TRUE))
+prob_geo <- data.frame(mean.random, upper.random, lower.random)
+prob_geo$num_words <- seq.int(nrow(prob_geo))
+prob_geo$num_words <- (prob_geo$num_words + 1)
+
+ggplot(aes(x = production, y = mean), data = geodesic_production) + 
+  geom_ribbon(data=random_geo, aes(x=num_words, y=mean.random, ymax=upper.random,
+                                          ymin=lower.random), color='lightgrey') +
+  geom_ribbon(aes(ymax= ci_upper, ymin=ci_lower), fill='rosybrown') +
+  geom_ribbon(aes(x=num_words, y=mean.random, ymax=upper.random, ymin=lower.random),
+              data=prob_geo, fill='steelblue') +
+  geom_smooth(data=random_geo, aes(x=num_words, y=mean.random), color='black') +
+  geom_smooth(color='red') +
+  geom_smooth(aes(x=num_words, y=mean.random), data=prob_geo, color='blue') +
+  #coord_cartesian(ylim=c(.01, .05)) +
+  theme_bw()
+```
+
+
+```{r, echo = FALSE}
+########## PREFERENTIAL ACQUISITION MODELS ##############
+# get the degree locally for each node in final network
+wordbank_graph <- graph_from_adjacency_matrix(wordbank_normal,
+                                    mode="undirected",weighted=TRUE)
+final_node_degree <- graph.strength(wordbank_graph)
+final_node_degree <- as.data.frame(final_node_degree)
+final_node_degree$all_nodes <- rownames(final_node_degree) 
+
+get_random_nodes <- function(num_nodes, df_to_join) {
+    random_nodes <- sample(all_items, num_nodes)
+    random_nodes <- as.data.frame(random_nodes)
+    random_nodes <- left_join(random_nodes, df_to_join,
+                        by= c('random_nodes' = 'all_nodes'))
+    average_degree <- mean(random_nodes$final_node_degree)
+    average_degree
+}
+
+get_prob_nodes <- function(num_nodes, df_to_join) {
+    random_nodes <- kids_word_order %>%
+      sample_n(num_nodes, weight = exp(100*count)) 
+    random_nodes <- as.data.frame(random_nodes)
+    random_nodes <- left_join(random_nodes, df_to_join,
+                        by= c('uni_lemma' = 'all_nodes'))
+    average_degree <- mean(random_nodes$final_node_degree)
+    average_degree
+}
+
+run_node_sim <- function(i, df_to_join) {
+  replicate(100, get_random_nodes(i, df_to_join))
+}     
+
+run_prob_node <- function(i, df_to_join) {
+  replicate(100, get_prob_nodes(i, df_to_join))
+}  
+# acquisition_prob_degree <- do.call("rbind", sapply(2:653, 
+#                    function(i) run_prob_node(i, final_node_degree), simplify = FALSE))
+
+# acquisition_degree <- do.call("rbind", sapply(2:653, 
+#                    function(i) run_node_sim(i, final_node_degree), simplify = FALSE))
+# 
+# write.csv(acquisition_degree, 'acquisition_degree.csv')
+# write.csv(acquisition_prob_degree, 'acquisition_prob_degree.csv')
+
+acquisition_degree <- read_csv('acquisition_degree.csv') %>%
+  select(-X1)
+  
+upper.random <- apply(acquisition_degree, 1, 
+                      function(x) quantile(x, probs=.975,na.rm = TRUE))
+lower.random <- apply(acquisition_degree, 1, 
+                      function(x) quantile(x, probs=.025,na.rm = TRUE))
+mean.random <- apply(acquisition_degree, 1, 
+                     function(x) mean(x, na.rm = TRUE))
+acquisition_degree <- data.frame(mean.random, upper.random, lower.random)
+acquisition_degree$num_words <- seq.int(nrow(acquisition_degree))
+acquisition_degree$num_words <- (acquisition_degree$num_words + 1)
+
+acquisition_degree_avg <- acquisition_degree %>%
+  mutate(mean = mean.random/654,
+         ci_upper = upper.random/654,
+         ci_lower = lower.random/654)
+
+
+
+acquisition_prob_degree <- read_csv('acquisition_prob_degree.csv') %>%
+  select(-X1)
+  
+upper.random <- apply(acquisition_prob_degree, 1, 
+                      function(x) quantile(x, probs=.975,na.rm = TRUE))
+lower.random <- apply(acquisition_prob_degree, 1, 
+                      function(x) quantile(x, probs=.025,na.rm = TRUE))
+mean.random <- apply(acquisition_prob_degree, 1, 
+                     function(x) mean(x, na.rm = TRUE))
+acquisition_prob_degree <- data.frame(mean.random, upper.random, lower.random)
+acquisition_prob_degree$num_words <- seq.int(nrow(acquisition_prob_degree))
+acquisition_prob_degree$num_words <- (acquisition_prob_degree$num_words + 1)
+
+acquisition_prob_degree_avg <- acquisition_prob_degree %>%
+  mutate(mean = mean.random/654,
+         ci_upper = upper.random/654,
+         ci_lower = lower.random/654)
+
+ggplot(aes(x = num_words, y = mean), data = acquisition_degree_avg) + 
+  geom_ribbon(aes(ymax= ci_upper, ymin=ci_lower), fill='rosybrown') +
+  geom_ribbon(aes(x=num_words, y=mean, ymax=ci_upper, ymin=ci_lower),
+              data=acquisition_prob_degree_avg, fill='steelblue') +
+  geom_smooth(color='red') +
+  geom_smooth(aes(x=num_words, y=mean), data=acquisition_prob_degree_avg, color='blue') +
+  #coord_cartesian(ylim=c(.01, .05)) +
+  theme_bw()
+
+
+
+
+###### KIDS ACQUISITION MODELS!!! #######
+kid_acquisition <- english_data %>%
+  filter(value=='produces') %>%
+  left_join(final_node_degree, by= c('uni_lemma'='all_nodes')) %>%
+  group_by(data_id) %>%
+  summarize(avg_degree = mean(final_node_degree)) %>%
+  left_join(english_kids)
+
+kid_acquisition_degree_production <- kid_acquisition %>%
+  filter(!is.na(production)) %>%
+  group_by(production) %>%
+  rename(num_words=production) %>%
+  mutate(avg_degree=avg_degree/654) %>%
+  multi_boot_standard("avg_degree", na.rm = TRUE)
+
+ggplot(aes(x = num_words, y = mean), data = kid_acquisition_degree_production) + 
+  geom_pointrange(aes(x=num_words, y=mean, ymax=ci_upper, ymin=ci_lower),
+              data=acquisition_degree_avg, color='lightgrey') +
+  geom_smooth(aes(x=num_words, y=mean), data=acquisition_degree_avg, color='black') +
+  geom_pointrange(aes(ymax = ci_upper, ymin = ci_lower), color='rosybrown') +
+  geom_pointrange(aes(x=num_words, y=mean, ymax=ci_upper, ymin=ci_lower),
+              data=acquisition_prob_degree_avg, color='steelblue') +
+  geom_smooth(aes(x=num_words, y=mean), data=acquisition_prob_degree_avg, color='blue') +
+  geom_smooth(color='red') +
+  theme_bw()
+```
+
+Look at correlation of Preferential Acquisition order and true order
+```{r}
+comparison_data <- left_join(kids_word_order, final_node_degree_sort,
+                              by = c("uni_lemma" = "all_nodes"))
+
+cor.test(comparison_data$count, scale(comparison_data$final_node_degree))
+
+glm(count ~ scale(final_node_degree), family = "binomial", data = comparison_data)
+```
 
 
 ```{r, echo= FALSE}
