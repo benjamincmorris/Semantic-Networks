@@ -20,6 +20,7 @@ suppressPackageStartupMessages(library(igraph))
 suppressPackageStartupMessages(library(lazyeval))
 suppressPackageStartupMessages(library(tidyr))
 suppressPackageStartupMessages(library(langcog))
+suppressPackageStartupMessages(library(entropy))
 
 
 #wordbank
@@ -50,10 +51,10 @@ english_items <- get_item_data('English', 'WS') %>%
 Training word2vec on CHILDES Data
 ```{r, echo=FALSE, cache= TRUE}
 # full childes
-# model = train_word2vec("CHILDES_words_only.txt",output="full_vectors.bin",
+# model = train_word2vec("data/CHILDES_words_only.txt",output="full_vectors.bin",
 #        threads = 4,vectors = 100, window=6, cbow=1, min_count = 10, force= TRUE)
 
-model = read.vectors("full_vectors.bin")
+model = read.vectors("data/full_vectors.bin")
 
 # Write a csv of the missing lemmas to join back in
 # english_items_missing <- english_items %>%
@@ -61,7 +62,7 @@ model = read.vectors("full_vectors.bin")
   #write_csv("missing_lemmas.csv")
 
 # Read back the csv with a new colum of replacement lemmas
-missing_items <- read_csv("missing_lemmas.csv")
+missing_items <- read_csv("data/missing_lemmas.csv")
 
 all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
                         english_items$uni_lemma))
@@ -111,7 +112,9 @@ wordbank_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
 diag(wordbank_zeroed) <- 0
 
 #"normalize the rows of the matrix, such that each row sums to one, and that any value DM(I,J) can be interpreted as the strength of the directional connection from word WI to word WJ" (Rotaru, 2016)
-wordbank_normal <- normalize_lengths(wordbank_zeroed)
+# normalizing seems inapporpriate for our data. it would make lead to the loss of the symmetry of 
+#   our matrix and thus force directionality where there was none. 
+# wordbank_normal <- normalize_lengths(wordbank_zeroed)
 
 
 
@@ -120,38 +123,54 @@ wordbank_normal <- normalize_lengths(wordbank_zeroed)
 #write the matirx for visualization
 #NOTE:if you rewrite the csv file, the network will NOT load when you run the shiny app
 # until you manually enter 'in_node' (without quotes) as the value for the first cell of the data sheet.
-#write.csv(wordbank_normal, file= 'shiny_apps/networks/assocs/w2v_assocs.csv')
+#write.csv(wordbank_zeroed, file= 'shiny_apps/networks/assocs/w2v_assocs.csv')
 ```
 
 
-
-
-**TRANSITIVITY** (Clustering Coefficient), Kid Data and Randomly Generated Graphs
-```{r}
-english_data <- 
+CLEAN UP THE WORDBANK DATA AND MATCH TO WORDS PRESENT IN OUR MODEL
+```{r, echo=FALSE}
+english_data_messy <- 
   get_instrument_data("English", "WS", administrations = TRUE, iteminfo=TRUE) %>%
   filter(type == "word", uni_lemma %in% rownames(wordbank_normal)) %>%
-  select(-production, -comprehension)
+  select(-production, -comprehension) 
 
-#Production values from wordbank are inappropriate to use since we have subsetted down to 
+english_data_distinct <- english_data_messy %>%
+  ungroup() %>%
+  mutate(value = value == "produces") %>%
+  group_by(data_id, age, uni_lemma) %>%
+  summarize(value = if_else(sum(value) > 0, "produces", ""))
+
+
+# Production values from wordbank are inappropriate to use since we have subsetted down to 
 # the words present in our network. Need to recalculate vocabulary size.
-vocab_size <- sapply(51699:57474, function(i) (english_data %>% 
-                                   filter(data_id==i) %>% 
-                                   filter(value=='produces') %>% 
-                                   summarize(vocab_size= n())),
-                                   simplify='vector')
-ids <- 51699:57474
-vocab_size <- sapply(1:length(vocab_size), function(i) vocab_size[i]$vocab_size)
-fixed_production <- data.frame(ids, vocab_size)
-english_data <- left_join(english_data, fixed_production, by= c("data_id"='ids'))
+fixed_production <- english_data_distinct %>% 
+  group_by(data_id) %>%
+  filter(value=='produces') %>%
+  summarize(vocab_size=n())
+
+english_data <- left_join(english_data_messy, fixed_production, by='data_id')
+
+
 
 english_kids <- 
   get_administration_data(language = "English", form = "WS", original_ids = TRUE)
 
 all_items <- rownames(wordbank_normal)
+```
 
 
+
+**TRANSITIVITY** (Clustering Coefficient), Kid Data and Randomly Generated Graphs
+```{r}
 ###### CODE FOR BUILDING THE RANDOM NETWORKS ######
+#function to call for just one kid's data
+pull_one <- function(id) {
+  one_kid <- (english_data %>%
+  filter(data_id == id) %>%
+  filter(value == "produces"))
+}
+
+
 # # set a function for making a random graph of size N and computing CC
 # sample_transitivity <- function(num_nodes) {
 #     random_nodes <- sample(all_items, num_nodes)
@@ -294,8 +313,8 @@ sample_degree <- function(num_nodes) {
     random_nodes <- sample(all_items, num_nodes)
 
     random_graph <- graph_from_adjacency_matrix(
-        wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
-               colnames(wordbank_normal) %in% random_nodes],
+        wordbank_zeroed[rownames(wordbank_zeroed) %in% random_nodes,
+               colnames(wordbank_zeroed) %in% random_nodes],
      weighted = TRUE, mode = "undirected")
     
     mean(graph.strength(random_graph))
@@ -305,12 +324,11 @@ sample_degree <- function(num_nodes) {
 run_sim_degree <- function(i) {
   replicate(1000,sample_degree(i))
 }       
-#2:653
-# random_nets_degree <- do.call("rbind", sapply(2:653, function(i) run_sim_degree(i), simplify = FALSE))
+# random_nets_degree <- do.call("rbind", sapply(2:655, function(i) run_sim_degree(i), simplify = FALSE))
 
 
-# write.csv(random_nets_degree, 'random_degree.csv')
-random_nets_degree <- read_csv('random_degree.csv')
+# write.csv(random_nets_degree, 'non_normalized/non_normalized_random_degree.csv')
+# random_nets_degree <- read_csv('data/random_degree.csv')
 
 #we will need to first drop the size column so it's not included
 random_nets_degree_dropped <- random_nets_degree %>%
@@ -337,68 +355,54 @@ random_degree_avg <- random_degree %>%
 
 one_degree <- function(id) {
   one_graph <- graph_from_adjacency_matrix(
-  wordbank_normal[rownames(wordbank_normal) %in% pull_one(id)$uni_lemma,
-               colnames(wordbank_normal) %in% pull_one(id)$uni_lemma],
+  wordbank_zeroed[rownames(wordbank_zeroed) %in% pull_one(id)$uni_lemma,
+               colnames(wordbank_zeroed) %in% pull_one(id)$uni_lemma],
   weighted = TRUE, mode = "undirected")
   
   mean(graph.strength(one_graph))
 }
 
 #start a data frame
-# id <- 51699
-# degree <- one_degree(51699) 
-# degree_df <- data_frame(id, degree)
+id <- 51699
+degree <- one_degree(51699)
+degree_df <- data_frame(id, degree)
 #loop in each kid's CC (17 minutes)
 #slow, because for loop, using pull_one for comparison, and rbinding
-# 51700:57474
-# for (i in 51700:57474) {
-#   if (nrow(pull_one(i))==1) {
-#     degree_df <- rbind(degree_df, c(i, NA))
-#   } else 
-#     degree_df <- rbind(degree_df, c(i, one_degree(i)))
-# }
+#51700:57474
+for (i in 51700:57474) {
+  if (nrow(pull_one(i))==1) {
+    degree_df <- rbind(degree_df, c(i, NA))
+  } else
+    degree_df <- rbind(degree_df, c(i, one_degree(i)))
+}
 
-#write.csv(degree_df, 'individ_degree_strength.csv')
+# write.csv(degree_df, 'non_normalized/non_normal_kid_degree.csv')
 
-degree_df <- read_csv('individ_degree_strength.csv') %>%
-  select(-X1)
+# degree_df <- read_csv('data/individ_degree_strength.csv') %>%
+#   select(-X1)
 
-degree_str_full <- left_join(degree_df, english_kids, by= c('id'='data_id'))
+degree_str_full <- left_join(degree_df, english_data, by= c('id'='data_id'))
 
-#longitudinal
-degree_longitudinal <- degree_str_full %>%
-  filter(longitudinal, form == "WS") %>%
-  select(-id, -comprehension) %>%
-  mutate(age = as.numeric(age)) %>%
-  mutate(age = if_else(age == 17 | age == 29, age - 1, age)) %>%
-  gather(measure, value, production, degree) %>%
-  spread(age, value)
-
-correlations_longitudinal <- degree_longitudinal %>%
-  group_by(measure) %>%
-  summarise(cor = cor(`16`, `28`, use = "complete"))
-correlations_longitudinal
 
 
 
 degree_production <- degree_str_full %>%
-  filter(!is.na(production)) %>%
-  group_by(production) %>%
+  distinct(id, vocab_size, degree) %>%
+  filter(!is.na(vocab_size)) %>%
+  group_by(vocab_size) %>%
   multi_boot_standard("degree", na.rm = TRUE) 
 
 degree_production_avg <- degree_production %>%
-  mutate(mean = mean/production,
-         ci_upper = ci_upper/production,
-         ci_lower = ci_lower/production)
-
-
+  mutate(mean = mean/vocab_size,
+         ci_upper = ci_upper/vocab_size,
+         ci_lower = ci_lower/vocab_size)
 
 ggplot(aes(x = num_words, y = mean), data = random_degree_avg) +
   geom_ribbon(aes(ymax = ci_upper, ymin = ci_lower), fill='lightgrey') +
-  geom_ribbon(aes(x = production, y = mean, ymax= ci_upper, ymin=ci_lower),
+  geom_ribbon(aes(x = vocab_size, y = mean, ymax= ci_upper, ymin=ci_lower),
               data = degree_production_avg, fill='rosybrown') +
   geom_smooth(color='black') +
-  geom_smooth(data=degree_production_avg, color= 'red', aes(x=production, y=mean)) +
+  geom_smooth(data=degree_production_avg, color= 'red', aes(x=vocab_size, y=mean)) +
   theme_bw()
 ```
 
@@ -471,18 +475,7 @@ geodesic_df <- read_csv('individ_geodesic.csv') %>%
 
 geodesic_full <- left_join(geodesic_df, english_kids, by= c('id'='data_id'))
 
-geodesic_longitudinal <- geodesic_full %>%
-  filter(longitudinal, form == "WS") %>%
-  select(-id, -comprehension) %>%
-  mutate(age = as.numeric(age)) %>%
-  mutate(age = if_else(age == 17 | age == 29, age - 1, age)) %>%
-  gather(measure, value, production, geodesic) %>%
-  spread(age, value)
 
-correlations_longitudinal <- geodesic_longitudinal %>%
-  group_by(measure) %>%
-  summarise(cor = cor(`16`, `28`, use = "complete"))
-correlations_longitudinal
 
 geodesic_production <- geodesic_full %>%
   filter(!is.na(production)) %>%
@@ -500,7 +493,7 @@ ggplot(aes(x = num_words, y = mean.random), data = random_geo) +
 ```
 
 
-
+ORDERED WORD NETWORKS based on the proportion of all kids that know each word
 ```{r, echo= FALSE}
 kids_word_order <- english_data %>%
   group_by(uni_lemma) %>%
@@ -595,7 +588,7 @@ ggplot(aes(x = num_words, y = geo), data = ordered_nets_geo) +
 
 
 
-
+SWAPPING WORD ORDER TO EXAMINE EFFECTS ON MODEL
 ```{r, echo=FALSE}
 ordered_words
 ordered_words_swap <- kids_word_order
@@ -652,7 +645,7 @@ ggplot(aes(x = num_words, y = mean), data = transitivity_production) +
 
 
 ```{r, echo= false}
-###### building ordered networks probablisitically ##########
+###### building ordered networks probablistically ##########
 build_net_prob <- function(num_nodes) {
     random_nodes <- kids_word_order %>%
       sample_n(num_nodes, weight = exp(100*count)) 
@@ -890,66 +883,10 @@ glm(count ~ scale(final_node_degree), family = "binomial", data = comparison_dat
 ```
 
 
-Investigating Variability in Kid's Early Words
-```{r, echo=false}
-get_entropy <- function(num_words) {
-  num_kids <- nrow( english_data %>%
-    filter(vocab_size==num_words) %>%
-    distinct(data_id))
-    
-  random_words <- replicate(num_kids, sample(all_items, num_words))
-  
-  some_vector <- sapply(1:length(all_items), 
-                        function(i) sum(random_words %in% all_items[i]), simplify='vector')
-  entropy(some_vector, unit='log2')
-}
-
-
-
-normalize <- function(vector) {
-  new_vector <- sapply(1:length(vector), function(i) vector[i]/length(vector))
-  new_vector
-}
-#entropy function seems to normalize automatically
-entropy(some_vector)
-entropy(normalize(some_vector))
-entropy(some_vector/655)
-
-
-kids_vocab_entropy <- function(num_words) {
-    kid_entropy <- english_data %>%
-        filter(vocab_size==num_words) %>%
-        filter(value=='produces') %>%
-        group_by(uni_lemma) %>%
-        summarize(num_kids=n())
-    
-    entropy(kid_entropy$num_kids, unit='log2')
-}
-
-entropy_100 <- replicate(1000, get_entropy(100))
-hist(entropy_100)
-kids_vocab_entropy(100)
-mean(entropy_100 <= kids_vocab_entropy(100))
-
-entropy_300 <- replicate(1000, get_entropy(300))
-hist(entropy_300)
-kids_vocab_entropy(300)
-mean(entropy_300 <= kids_vocab_entropy(300))
-
-
-entropy_500 <- replicate(1000, get_entropy(500))
-hist(entropy_500)
-kids_vocab_entropy(500)
-mean(entropy_500 <= kids_vocab_entropy(500))
-
-entropy_600 <- replicate(1000, get_entropy(600))
-hist(entropy_600)
-kids_vocab_entropy(600)
-mean(entropy_600 <= kids_vocab_entropy(600))
-```
 
 
 UPPER BOUND: Making Networks Based on Maximizing Local Degree at Each Step
+LURE OF ASSOCIATES?
 ```{r, echo=FALSE}
 possible_start_nodes <- function(node1, node2) {
     possible_nodes <- c(all_items[node1], all_items[node2])
@@ -970,47 +907,270 @@ node_2 <- 11111
 strength <- 11111
 start_nodes <- data.frame(node_1, node_2, strength)
 
-for (i in 1:length(all_items)) {
-    for (y in 1:length(all_items)) {
-        start_nodes <- rbind(start_nodes, c(all_items[i], all_items[y],
-                                            possible_start_nodes(i,y))) 
-    }
-}
+# very slow, also it doesn't need to calculate twice/pair
+# for (i in 1:length(all_items)) {
+#     for (y in 1:length(all_items)) {
+#         start_nodes <- rbind(start_nodes, c(all_items[i], all_items[y],
+#                                             possible_start_nodes(i,y))) 
+#     }
+# }
+
+starting <- read_csv('data/start_nodes.csv') %>%
+  arrange(desc(strength))
 
 
 get_another_node <- function(vector_of_nodes, node2) {
-    possible_nodes <- c(all_items[node1], all_items[node2])
-
-    if (node1!=node2) {
-        possible_graph <- graph_from_adjacency_matrix(
+    possible_nodes <- c(vector_of_nodes, node2)
+    
+    possible_graph <- graph_from_adjacency_matrix(
             wordbank_normal[rownames(wordbank_normal) %in% possible_nodes,
                    colnames(wordbank_normal) %in% possible_nodes],
             weighted = TRUE, mode = "undirected")
-        mean(graph.strength(possible_graph))
-    } else 
-        NA 
+    mean(graph.strength(possible_graph))
+}
+
+# left_overs <- all_items
+# maximized_nodes <- c('these', 'those')
+# left_overs <- left_overs[-(which(left_overs %in% maximized_nodes))]
+# 
+# for (i in 1:653) {
+#     more_nodes <- sapply(1:length(left_overs), function(i) 
+#              get_another_node(maximized_nodes, left_overs[[i]]))
+#     best_node <- left_overs[[which.max(more_nodes)]]
+#     maximized_nodes <- c(maximized_nodes, best_node)
+#     left_overs <- left_overs[-(which.max(more_nodes))]
+# }
+
+maximized_nodes <- read_csv('data/maximized_nodes.csv')
+maximized_nodes <- as.vector(maximized_nodes$x)
+
+
+
+build_net_max <- function(num_nodes) {
+    random_nodes <- maximized_nodes[1:num_nodes]
+    
+    random_graph <- graph_from_adjacency_matrix(
+        wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
+               colnames(wordbank_normal) %in% random_nodes],
+     weighted = TRUE, mode = "undirected")
+    random_graph
+}
+
+########## DEGREE LURE OF ASSOCIATES NETOWRKS ###################
+maximized_nets <- do.call("rbind", sapply(2:655, function(i)
+              mean(graph.strength(build_net_max(i))), simplify = FALSE))
+
+maximized_nets <- read_csv('data/maximized_nets.csv') %>%
+  rename(num_words=X1, degree=V1) %>%
+  transmute(num_words=num_words+1, degree_avg= degree/num_words)
+
+ggplot(aes(x=num_words, y=degree_avg), data=maximized_nets) +
+  geom_point() +
+  geom_smooth()
+
+ggplot(aes(x = num_words, y = mean), data = random_degree_avg) +
+  geom_ribbon(aes(ymax = ci_upper, ymin = ci_lower), fill='lightgrey') +
+  geom_ribbon(aes(x = production, y = mean, ymax= ci_upper, ymin=ci_lower),
+              data = degree_production_avg, fill='rosybrown') +
+  geom_point(aes(x=num_words, y=degree_avg), data=maximized_nets, color='green') +
+  geom_smooth(color='black') +
+  geom_smooth(data=degree_production_avg, color= 'red', aes(x=production, y=mean)) +
+  geom_smooth(data=maximized_nets, aes(x=num_words, y=degree_avg)) +
+  #coord_cartesian(ylim=c(0,.14)) +
+  theme_bw() 
+```
+
+
+
+True Preferential Attachment
+```{r}
+# we need a model where a new node is added if the nodes it would connect to have the highest average degree. 
+# but wouldn't that privledge the case where a possible node only connects to one high degree node
+#    over a possible node with that same connection, but that also connects to other nodes?
+## Set/select starting nodes
+attachment_nodes <- c('hi', 'cow', 'tiger', 'farm', 'giraffe')
+# attachment_nodes <- sixteen_month_words$uni_lemma[1:17]
+attachment_degree <- c(0,0)
+all_attach_nodes <- c(1:655)
+
+# Building a list of words that maximizes local degree using matrix multiplication
+for (i in 1:3) {
+    for (i in 1:(length(all_items)-length(attachment_nodes))) {
+        #make a matrix that marks 0/1 all words as absent/present
+        node_nums <- (rownames(wordbank_normal) %in% attachment_nodes)
+        nodes <- ifelse(node_nums==TRUE, 1, 0)
+        nodes <- as.matrix(nodes)
+        rownames(nodes) <- all_items
+        flipped_nodes <- t(nodes)
+        to_add <- ifelse(nodes==1, 0,1)
+        
+        # matrix multiplication to get subset weights
+        matrix_a <- flipped_nodes %*% wordbank_normal
+        matrix_c <- matrix_a * flipped_nodes
+        
+        #sequential
+        chosen_node <- sample(1:length(matrix_c), 1, prob = matrix_c)
+        
+        chosen_matrix <- rep(0, length(matrix_c))
+        chosen_matrix[chosen_node] <- 1
+        
+        sequential_add_probability <- t(to_add) * (t(chosen_matrix) %*% wordbank_normal) 
+        
+        #simultaneous
+        simultaneous_add_probabiltiy <- t(to_add) * (matrix_c %*% wordbank_normal)
+        
+        #lure of the associates
+        loa_add_probability <- t(to_add) * matrix_a 
+        
+        
+        
+        #preferential acquisition
+        preferential_acquisition_add_probabiltiy <- t(to_add) *  rowSums(wordbank_normal)
+        all_items[sample(1:655, size = 1, prob = preferential_acquisition_add_probabiltiy)]
+
+        #matrix_b <- wordbank_normal %*% nodes
+        #degree_nodes <- matrix_b %*% matrix_a %*% to_add
+        # the node values still haven't been zeroed for nodes already in the network
+        #   Can't seem to do this with the matrix multiplier func %*% but can with simple *
+        degree_new_nodes <- to_add * degree_nodes
+        new_node <- sample_n(as.data.frame(degree_new_nodes), 1, weight=V1)
+        attachment_nodes <- c(attachment_nodes, rownames(new_node))
+        attachment_degree <- c(attachment_degree, new_node$V1)
+    }
+    all_attach_nodes <- cbind(all_attach_nodes, attachment_nodes)
+    attachment_nodes <- c('these','those')
 }
 
 
-node_1 <- 11111
-node_2 <- 11111
-strength <- 11111
-start_nodes <- data.frame(node_1, node_2, strength)
+    # my initial attempt, no matrix algebra
+attachment_nodes2 <- c('woof woof', 'hi', 'cow', 'tiger', 'farm', 'giraffe', 'sticky')
+    node_nums <- which(rownames(wordbank_normal) %in% attachment_nodes2)
+    wordbank_normal[node_nums, node_nums]
+    rowSums(wordbank_normal[node_nums, node_nums])
+    degree_i <- summed_degree[node2]
 
-for (i in 1:length(all_items)) {
-    for (y in 1:length(all_items)) {
-        start_nodes <- rbind(start_nodes, c(all_items[i], all_items[y],
-                                            possible_start_nodes(i,y))) 
-    }
-}     
-  
-#     transitivity_df <- rbind(transitivity_df, c(i, NA))
-#   } else 
-#     transitivity_df <- rbind(transitivity_df, c(i, one_transitivity(i)))
+
+ 
+ # left_overs <- all_items
+# maximized_nodes <- c('these', 'those')
+# left_overs <- left_overs[-(which(left_overs %in% maximized_nodes))]
+# 
+# for (i in 1:653) {
+#     more_nodes <- sapply(1:length(left_overs), function(i) 
+#              get_another_node(maximized_nodes, left_overs[[i]]))
+#     best_node <- left_overs[[which.max(more_nodes)]]
+#     maximized_nodes <- c(maximized_nodes, best_node)
+#     left_overs <- left_overs[-(which.max(more_nodes))]
+# }
+# 
+# maximized_nodes <- read_csv('data/maximized_nodes.csv')
+# maximized_nodes <- as.vector(maximized_nodes$x)
+# 
+# 
+# 
+# build_net_max <- function(num_nodes) {
+#     random_nodes <- maximized_nodes[1:num_nodes]
+#     
+    # random_graph <- graph_from_adjacency_matrix(
+    #     wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
+    #            colnames(wordbank_normal) %in% random_nodes],
+    #  weighted = TRUE, mode = "undirected")
+#     random_graph
 # }
 
-
 ```
+
+
+
+Investigating Variability in Kid's Early Words
+```{r, echo=false}
+get_entropy <- function(num_words) {
+  num_kids <- nrow( english_data %>%
+    filter(vocab_size==num_words) %>%
+    distinct(data_id))
+    
+  random_words <- replicate(num_kids, sample(all_items, num_words))
+  
+  some_vector <- sapply(1:length(all_items), 
+                        function(i) sum(random_words %in% all_items[i]), simplify='vector')
+  entropy.shrink(some_vector, verbose=FALSE)
+}
+
+#entropy function seems to normalize automatically
+entropy(some_vector)
+entropy(normalize(some_vector))
+entropy(some_vector/655)
+
+# ~9.5 hours
+# entropy_dists <- sapply(1:655, function(i) replicate(1000, get_entropy(i)))
+# write.csv(entropy_dists, 'data/vocab_entropy_dist.csv')
+vocab_entropy <- read_csv('data/vocab_entropy_dist.csv') %>%
+  select(-X1)
+
+kids_vocab_entropy <- function(num_words) {
+    kid_entropy <- english_data %>%
+        filter(vocab_size==num_words) %>%
+        filter(value=='produces') %>%
+        group_by(uni_lemma) %>%
+        summarize(num_kids=n())
+    
+    entropy.NSB(kid_entropy$num_kids, CMD='nsb-entropy')
+}
+
+kids_entropy <- sapply(1:5, function(i) kids_vocab_entropy(i))
+kids_entropy_df <- data.frame(entropy = kids_entropy, vocab = 1:655)
+
+
+get_sds <- function(vocab_size) {
+  (mean(vocab_entropy[[vocab_size]]) - kids_vocab_entropy(vocab_size))/
+    sd(vocab_entropy[[vocab_size]])
+}
+
+entropy_sds <- sapply(1:655, function(i) get_sds(i))
+entropies <- as.data.frame(entropy_sds)
+entropies$vocab_size <- seq.int(length(entropy_sds))
+
+ggplot(aes(x= vocab_size, y=entropy_sds), data=entropies) +
+  geom_point() +
+  ylim(-20,175) +
+  geom_smooth()
+```
+
+
+
+THINKING ABOUT THE HILLS STARTING NODES FOR OUR DATA
+```{r, echo=FALSE}
+#Hills starts with a network of words that >50% of kids know at 16 months
+# But doesn't say exactly how many words that is for him...
+# our kids definitely know some words 
+english_data %>% 
+    filter( value=='produces', age==16) %>% 
+    group_by(vocab_size) %>% 
+    summarize(n())
+
+#953 kids with 16 words
+english_data %>%
+    filter(value=='produces') %>%
+    distinct(data_id,age) %>%
+    group_by(age) %>%
+    summarize(num_kids = n())
+
+#Find how many kids know each word for kids at 16 months
+sixteen_month_words <- english_data %>%
+    filter(value=='produces', age==16) %>%
+    group_by(uni_lemma) %>%
+    summarize(num_kids = n()/953) %>%
+    arrange(desc(num_kids)) %>%
+    filter(num_kids >.5)
+
+#17 words that more than half of kids know at 16 months
+#654 of 655 words are known by at least 1 child at 16 months
+sixteen_month_words$uni_lemma <- factor(sixteen_month_words$uni_lemma, 
+        levels = sixteen_month_words$uni_lemma[order(sixteen_month_words$num_kids)])
+qplot(data=sixteen_month_words, x=uni_lemma, y=num_kids)
+```
+
+
 
 
 

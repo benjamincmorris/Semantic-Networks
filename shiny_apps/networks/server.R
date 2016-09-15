@@ -65,9 +65,9 @@ shinyServer(function(input, output) {
     req(input$source)
     
     if (input$source == "W2V"){
-      title <- "Normalized Cosine Similarity"
-      high_point <- .3
-      start_point <- .1
+      title <- "Cosine Similarity"
+      high_point <- .7
+      start_point <- .35
       low_point <- 0
       step_size <- .05
     # } else if (input$source == "PB"){
