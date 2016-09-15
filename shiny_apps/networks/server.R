@@ -65,11 +65,11 @@ shinyServer(function(input, output) {
     req(input$source)
     
     if (input$source == "W2V"){
-      title <- "Cosine Similarity"
+      title <- "Minimum Cosine Similarity"
       high_point <- .7
-      start_point <- .35
-      low_point <- 0
-      step_size <- .05
+      start_point <- .4
+      low_point <- .1
+      step_size <- .1
     # } else if (input$source == "PB"){
     #   title <- "Cosine Similarity"
     #   high_point <- 1
@@ -178,7 +178,7 @@ shinyServer(function(input, output) {
   assoc_edges <- reactive({
     req(input$weighted)
     
-    scaling = ifelse(input$source == "W2V", 10, 1)
+    scaling = ifelse(input$source == "W2V", 4, 1)
     
     edges <- assoc_edge_data() %>%
       mutate(width = scaling*width) %>%
@@ -199,7 +199,7 @@ shinyServer(function(input, output) {
                  linkWidth = JS("function(d) { return d.value; }"),
                  Group = "group", opacity = .8, zoom = TRUE, opacityNoHover = .8,
                  legend = input$group != "identity",
-                 linkColour = "#cccccc", fontSize = 10,
+                 linkColour = "#cccccc", fontSize = 12,
                  colourScale = ifelse(length(unique(assoc_nodes()$group)) > 10, 
                                       JS("d3.scale.category20()"),
                                       JS("d3.scale.category10()")))
