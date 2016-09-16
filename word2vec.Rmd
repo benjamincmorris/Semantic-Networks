@@ -131,7 +131,7 @@ CLEAN UP THE WORDBANK DATA AND MATCH TO WORDS PRESENT IN OUR MODEL
 ```{r, echo=FALSE}
 english_data_messy <- 
   get_instrument_data("English", "WS", administrations = TRUE, iteminfo=TRUE) %>%
-  filter(type == "word", uni_lemma %in% rownames(wordbank_normal)) %>%
+  filter(type == "word", uni_lemma %in% rownames(wordbank_zeroed)) %>%
   select(-production, -comprehension) 
 
 english_data_distinct <- english_data_messy %>%
@@ -155,8 +155,9 @@ english_data <- left_join(english_data_messy, fixed_production, by='data_id')
 english_kids <- 
   get_administration_data(language = "English", form = "WS", original_ids = TRUE)
 
-all_items <- rownames(wordbank_normal)
+all_items <- rownames(wordbank_zeroed)
 ```
+
 
 
 
@@ -329,6 +330,7 @@ run_sim_degree <- function(i) {
 
 # write.csv(random_nets_degree, 'non_normalized/non_normalized_random_degree.csv')
 # random_nets_degree <- read_csv('data/random_degree.csv')
+random_nets_degree <- read_csv('non_normalized/non_normalized_random_degree.csv')
 
 #we will need to first drop the size column so it's not included
 random_nets_degree_dropped <- random_nets_degree %>%
@@ -380,6 +382,9 @@ for (i in 51700:57474) {
 
 # degree_df <- read_csv('data/individ_degree_strength.csv') %>%
 #   select(-X1)
+
+degree_df <- read_csv('non_normalized/non_normal_kid_degree.csv') %>%
+  select(-X1)
 
 degree_str_full <- left_join(degree_df, english_data, by= c('id'='data_id'))
 
@@ -988,47 +993,108 @@ True Preferential Attachment
 # but wouldn't that privledge the case where a possible node only connects to one high degree node
 #    over a possible node with that same connection, but that also connects to other nodes?
 ## Set/select starting nodes
-attachment_nodes <- c('hi', 'cow', 'tiger', 'farm', 'giraffe')
-# attachment_nodes <- sixteen_month_words$uni_lemma[1:17]
+attachment_nodes <- c('mommy')
+# attachment_nodes <- as.vector(sixteen_month_words$uni_lemma)
 attachment_degree <- c(0,0)
 all_attach_nodes <- c(1:655)
+
+
+
+#make a matrix that marks 0/1 all words as absent/present
+build_current_net_matrix <- function(starting_nodes) {        
+        node_nums <- (rownames(wordbank_zeroed) %in% starting_nodes)
+        nodes <- ifelse(node_nums==TRUE, 1, 0)
+        nodes <- as.matrix(nodes)
+        rownames(nodes) <- all_items
+        nodes
+}
+
+# This function returns a matrix with every node (both absent/present in current net) and its degree
+#   but its degree only for considering the nodes currenlty in the network
+# build_matrix_a <- function(starting_nodes) {
+#         nodes <- build_current_net_matrix(starting_nodes)
+#         t(nodes) %*% wordbank_zeroed
+# }
+
+# This function returns a matrix with every node in the net + its degree in the network at this step
+build_matrix_c <- function(starting_nodes) {
+        nodes <- build_current_net_matrix(starting_nodes)
+        ((t(nodes) %*% wordbank_zeroed)) * t(nodes)
+}
+
+###SEQUENTIAL###########
+get_seq_nodes <- function(starting_nodes, num_words_to_add, initial_degree) {
+        if (num_words_to_add == 0) {
+              c(starting_nodes, initial_degree)
+        } else {
+              nodes <- build_current_net_matrix(starting_nodes)
+              matrix_c <- ((t(nodes) %*% wordbank_zeroed)) * t(nodes)
+              chosen_node <- ifelse(sum(matrix_c)==0, which(nodes==1),
+                                    sample(1:length(matrix_c), 1, prob = matrix_c))
+              
+              chosen_matrix <- rep(0, length(matrix_c))
+              chosen_matrix[chosen_node] <- 1
+              
+              sequential_add_probability <- t(to_add) * (t(chosen_matrix) %*% wordbank_zeroed) 
+              added_node <- sample(1:655, size=1, prob= sequential_add_probability)
+              current_nodes <- c(starting_nodes, all_items[added_node])
+              num_words_to_add <- num_words_to_add - 1
+              net_degree <- c(initial_degree, mean(build_matrix_c(current_nodes)))
+              get_seq_nodes(current_nodes, num_words_to_add, net_degree)
+        }
+}
+
+t1 <- proc.time()
+sequential_words_degree <- replicate(20000, 
+                 get_seq_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0))
+proc.time() - t1
+
+
+
+
+
+
 
 # Building a list of words that maximizes local degree using matrix multiplication
 for (i in 1:3) {
     for (i in 1:(length(all_items)-length(attachment_nodes))) {
         #make a matrix that marks 0/1 all words as absent/present
-        node_nums <- (rownames(wordbank_normal) %in% attachment_nodes)
+        node_nums <- (rownames(wordbank_zeroed) %in% attachment_nodes)
         nodes <- ifelse(node_nums==TRUE, 1, 0)
         nodes <- as.matrix(nodes)
         rownames(nodes) <- all_items
         flipped_nodes <- t(nodes)
         to_add <- ifelse(nodes==1, 0,1)
         
-        # matrix multiplication to get subset weights
-        matrix_a <- flipped_nodes %*% wordbank_normal
+        # matrix multiplication to get weights for nodes in the network at this step
+        matrix_a <- flipped_nodes %*% wordbank_zeroed
         matrix_c <- matrix_a * flipped_nodes
         
-        #sequential
-        chosen_node <- sample(1:length(matrix_c), 1, prob = matrix_c)
+        ###SEQUENTIAL###########
+        chosen_node <- ifelse(sum(matrix_c)==0, which(nodes==1),
+                              sample(1:length(matrix_c), 1, prob = matrix_c))
         
         chosen_matrix <- rep(0, length(matrix_c))
         chosen_matrix[chosen_node] <- 1
         
-        sequential_add_probability <- t(to_add) * (t(chosen_matrix) %*% wordbank_normal) 
+        sequential_add_probability <- t(to_add) * (t(chosen_matrix) %*% wordbank_zeroed) 
+        added_node <- sample(1:655, size=1, prob= sequential_add_probability)
+        # this adds added_node and calculates equivalent of mean(graph.strength) for the net
+        (sum(matrix_c) + sequential_add_probability[added_node]) / sum(nodes)
         
-        #simultaneous
-        simultaneous_add_probabiltiy <- t(to_add) * (matrix_c %*% wordbank_normal)
         
-        #lure of the associates
+        ###SIMULTANEOUS################
+        simultaneous_add_probabiltiy <- t(to_add) * (matrix_c %*% wordbank_zeroed)
+        
+        ###LURE OF THE ASSOCIATES###########
         loa_add_probability <- t(to_add) * matrix_a 
         
-        
-        
-        #preferential acquisition
-        preferential_acquisition_add_probabiltiy <- t(to_add) *  rowSums(wordbank_normal)
+
+        ###PREFERENTIAL ACQUISTION#########
+        preferential_acquisition_add_probabiltiy <- t(to_add) *  rowSums(wordbank_zeroed)
         all_items[sample(1:655, size = 1, prob = preferential_acquisition_add_probabiltiy)]
 
-        #matrix_b <- wordbank_normal %*% nodes
+        #matrix_b <- wordbank_zeroed %*% nodes
         #degree_nodes <- matrix_b %*% matrix_a %*% to_add
         # the node values still haven't been zeroed for nodes already in the network
         #   Can't seem to do this with the matrix multiplier func %*% but can with simple *
@@ -1044,9 +1110,9 @@ for (i in 1:3) {
 
     # my initial attempt, no matrix algebra
 attachment_nodes2 <- c('woof woof', 'hi', 'cow', 'tiger', 'farm', 'giraffe', 'sticky')
-    node_nums <- which(rownames(wordbank_normal) %in% attachment_nodes2)
-    wordbank_normal[node_nums, node_nums]
-    rowSums(wordbank_normal[node_nums, node_nums])
+    node_nums <- which(rownames(wordbank_zeroed) %in% attachment_nodes2)
+    wordbank_zeroed[node_nums, node_nums]
+    rowSums(wordbank_zeroed[node_nums, node_nums])
     degree_i <- summed_degree[node2]
 
 
@@ -1072,8 +1138,8 @@ attachment_nodes2 <- c('woof woof', 'hi', 'cow', 'tiger', 'farm', 'giraffe', 'st
 #     random_nodes <- maximized_nodes[1:num_nodes]
 #     
     # random_graph <- graph_from_adjacency_matrix(
-    #     wordbank_normal[rownames(wordbank_normal) %in% random_nodes,
-    #            colnames(wordbank_normal) %in% random_nodes],
+    #     wordbank_zeroed[rownames(wordbank_zeroed) %in% random_nodes,
+    #            colnames(wordbank_zeroed) %in% random_nodes],
     #  weighted = TRUE, mode = "undirected")
 #     random_graph
 # }
