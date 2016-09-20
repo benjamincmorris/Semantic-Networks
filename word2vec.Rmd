@@ -124,6 +124,26 @@ diag(wordbank_zeroed) <- 0
 #NOTE:if you rewrite the csv file, the network will NOT load when you run the shiny app
 # until you manually enter 'in_node' (without quotes) as the value for the first cell of the data sheet.
 #write.csv(wordbank_zeroed, file= 'shiny_apps/networks/assocs/w2v_assocs.csv')
+
+
+
+###ALLLLL WORDS###
+full_corpus_sim <- cosineSimilarity(model,model)
+full_corpus_zeroed <- ifelse(full_corpus_sim < 0, 0, full_corpus_sim)
+diag(full_corpus_zeroed) <- 0
+
+full_degree <- rowSums(full_corpus_zeroed) 
+all_all_items <- rownames(full_corpus_zeroed)
+
+ordered_all_words <- sort(full_degree, decreasing=TRUE)
+
+cdi_with_all_words <- (rowSums(full_corpus_zeroed[rownames(full_corpus_zeroed) 
+                                                  %in% all_cdi_words,]))
+cdi_with_all_words <- sort(cdi_with_all_words, decreasing = TRUE)
+cdi_with_all_words[1:50]
+
+pref_acquisiton_ordered <- order(probability, decreasing= TRUE)
+all_items[pref_acquisiton_ordered[1:50]]
 ```
 
 
@@ -203,9 +223,23 @@ random_trans <- data.frame(mean.random, upper.random, lower.random)
 random_trans$num_words <- seq.int(nrow(random_nets))
 random_trans$num_words <- (random_trans$num_words + 1)
 
+compute_cis <- function(data_frame) {
+    upper.random <- apply(data_frame, 1, function(x) quantile(x, probs=.975,na.rm = TRUE))
+    lower.random <- apply(data_frame, 1, function(x) quantile(x, probs=.025,na.rm = TRUE))
+    mean.random <- apply(data_frame, 1, function(x) mean(x, na.rm = TRUE))
+    new_data <- data.frame(mean.random, upper.random, lower.random)
+    new_data
+}
+
+#Add in a column specifying vocabulary size at a given iteration
+# note that for some models, including this one, the vocab size is actually nrow+1
+# because the model was starting with 2 nodes. 
+new_data$num_words <- seq.int(nrow(random_nets))
+random_trans$num_words <- (random_trans$num_words + 1)
+
 #function to call for just one kid's data
 pull_one <- function(id) {
-  one_kid <- (eng_iteminfo_data %>%
+  one_kid <- (english_data %>%
   filter(data_id == id) %>%
   filter(value == "produces"))
 }
@@ -505,7 +539,7 @@ kids_word_order <- english_data %>%
   filter(value=='produces') %>%
   filter(! is.na(uni_lemma)) %>%
   summarize(count= n()) %>%
-  filter(uni_lemma %in% rownames(wordbank_normal)) %>%
+  filter(uni_lemma %in% rownames(wordbank_zeroed)) %>%
   mutate(count = count/5775) %>%
   arrange(desc(count))
 
@@ -990,13 +1024,11 @@ ggplot(aes(x = num_words, y = mean), data = random_degree_avg) +
 True Preferential Attachment
 ```{r}
 # we need a model where a new node is added if the nodes it would connect to have the highest average degree. 
-# but wouldn't that privledge the case where a possible node only connects to one high degree node
+# but wouldn't that privlege the case where a possible node only connects to one high degree node
 #    over a possible node with that same connection, but that also connects to other nodes?
 ## Set/select starting nodes
 attachment_nodes <- c('mommy')
 # attachment_nodes <- as.vector(sixteen_month_words$uni_lemma)
-attachment_degree <- c(0,0)
-all_attach_nodes <- c(1:655)
 
 
 
@@ -1023,126 +1055,145 @@ build_matrix_c <- function(starting_nodes) {
 }
 
 ###SEQUENTIAL###########
-get_seq_nodes <- function(starting_nodes, num_words_to_add, initial_degree) {
+#Recursive model that builds list of words, calculates global degree at each step
+# can set which probability calculation to use.
+get_matrix_nodes <- function(starting_nodes, num_words_to_add, initial_degree, model_type) {
+        #Count (num_words_to_add) drops by 1 at each iteration. when all words have been generated,
+        #  get output. 
         if (num_words_to_add == 0) {
               c(starting_nodes, initial_degree)
+        #If the count is not up yet...
         } else {
               nodes <- build_current_net_matrix(starting_nodes)
-              matrix_c <- ((t(nodes) %*% wordbank_zeroed)) * t(nodes)
-              chosen_node <- ifelse(sum(matrix_c)==0, which(nodes==1),
+              matrix_c <- build_matrix_c(starting_nodes)
+              
+              if (model_type == 'sequential') {
+                        #special case where only one node is in net, auto select that node
+                        chosen_node <- ifelse(sum(matrix_c)==0, which(nodes==1),
                                     sample(1:length(matrix_c), 1, prob = matrix_c))
-              
-              chosen_matrix <- rep(0, length(matrix_c))
-              chosen_matrix[chosen_node] <- 1
-              
-              sequential_add_probability <- t(to_add) * (t(chosen_matrix) %*% wordbank_zeroed) 
-              added_node <- sample(1:655, size=1, prob= sequential_add_probability)
+                        chosen_matrix <- rep(0, length(matrix_c))
+                        chosen_matrix[chosen_node] <- 1
+                        #calcualte the probability of adding a given new node to the net
+                        probability <- t(!nodes) * (t(chosen_matrix) %*% wordbank_zeroed)
+                        #when adding the last few words it becomes increasingly likely that 
+                        # for a given chosen word, there will be no words still to add that connect
+                        # to it, which breaks the above code. 
+                        #this while loop says to keep choosing nodes until that is no loger true. 
+                        while (sum(probability)==0) {
+                                chosen_node <- ifelse(sum(matrix_c)==0, which(nodes==1),
+                                    sample(1:length(matrix_c), 1, prob = matrix_c))
+                                chosen_matrix <- rep(0, length(matrix_c))
+                                chosen_matrix[chosen_node] <- 1
+                                probability <- t(!nodes) * (t(chosen_matrix) %*% wordbank_zeroed)
+                        }
+              } else if (model_type == 'simultaneous') {
+                        #deal with special case where only one node is in network
+                        if (sum(nodes==1)) {
+                              probability <- t(!nodes) * (t(nodes) %*% wordbank_zeroed)
+                        } else {
+                              probability <- t(!nodes) * (matrix_c %*% wordbank_zeroed)
+                        }
+              } else if (model_type == 'loa') {
+                        matrix_a <- t(nodes) %*% wordbank_zeroed
+                        probability <- t(!nodes) * matrix_a 
+              } else if (model_type == 'acquisition') {
+                        probability <- t(!nodes) *  rowSums(wordbank_zeroed)
+              }
+              added_node <- sample(1:655, size=1, prob= probability)
               current_nodes <- c(starting_nodes, all_items[added_node])
               num_words_to_add <- num_words_to_add - 1
-              net_degree <- c(initial_degree, mean(build_matrix_c(current_nodes)))
-              get_seq_nodes(current_nodes, num_words_to_add, net_degree)
+              tagged_nodes <- which(build_matrix_c(current_nodes) > 0)
+              net_degree <- c(initial_degree, mean(build_matrix_c(current_nodes)[tagged_nodes]))
+              get_matrix_nodes(current_nodes, num_words_to_add, net_degree, model_type)
         }
 }
 
-t1 <- proc.time()
+####### sequential ########
+# 20000 iterations, takes about 16 hours
 sequential_words_degree <- replicate(20000, 
-                 get_seq_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0))
-proc.time() - t1
+        get_matrix_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0, 
+                      'sequential'))
 
 
+####### SIMULTANEOUS ########
+simultaneous_words_degree <- replicate(50, 
+        get_matrix_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0, 
+                      'simultaneous'))
+
+####### LURE OF THE ASSOCIATES ########
+loa_words_degree <- replicate(50, 
+      get_matrix_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0, 'loa'))
 
 
+####### ACQUISITION ########
+acquisition_words_degree <- replicate(50, 
+        get_matrix_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0, 
+                      'acquisition'))
 
 
+write.csv(sequential_words_degree, 'non_normalized/sequential_words_degree.csv')
+write.csv(loa_words_degree, 'non_normalized/loa_words_degree.csv')
 
-# Building a list of words that maximizes local degree using matrix multiplication
-for (i in 1:3) {
-    for (i in 1:(length(all_items)-length(attachment_nodes))) {
-        #make a matrix that marks 0/1 all words as absent/present
-        node_nums <- (rownames(wordbank_zeroed) %in% attachment_nodes)
-        nodes <- ifelse(node_nums==TRUE, 1, 0)
-        nodes <- as.matrix(nodes)
-        rownames(nodes) <- all_items
-        flipped_nodes <- t(nodes)
-        to_add <- ifelse(nodes==1, 0,1)
-        
-        # matrix multiplication to get weights for nodes in the network at this step
-        matrix_a <- flipped_nodes %*% wordbank_zeroed
-        matrix_c <- matrix_a * flipped_nodes
-        
-        ###SEQUENTIAL###########
-        chosen_node <- ifelse(sum(matrix_c)==0, which(nodes==1),
-                              sample(1:length(matrix_c), 1, prob = matrix_c))
-        
-        chosen_matrix <- rep(0, length(matrix_c))
-        chosen_matrix[chosen_node] <- 1
-        
-        sequential_add_probability <- t(to_add) * (t(chosen_matrix) %*% wordbank_zeroed) 
-        added_node <- sample(1:655, size=1, prob= sequential_add_probability)
-        # this adds added_node and calculates equivalent of mean(graph.strength) for the net
-        (sum(matrix_c) + sequential_add_probability[added_node]) / sum(nodes)
-        
-        
-        ###SIMULTANEOUS################
-        simultaneous_add_probabiltiy <- t(to_add) * (matrix_c %*% wordbank_zeroed)
-        
-        ###LURE OF THE ASSOCIATES###########
-        loa_add_probability <- t(to_add) * matrix_a 
-        
-
-        ###PREFERENTIAL ACQUISTION#########
-        preferential_acquisition_add_probabiltiy <- t(to_add) *  rowSums(wordbank_zeroed)
-        all_items[sample(1:655, size = 1, prob = preferential_acquisition_add_probabiltiy)]
-
-        #matrix_b <- wordbank_zeroed %*% nodes
-        #degree_nodes <- matrix_b %*% matrix_a %*% to_add
-        # the node values still haven't been zeroed for nodes already in the network
-        #   Can't seem to do this with the matrix multiplier func %*% but can with simple *
-        degree_new_nodes <- to_add * degree_nodes
-        new_node <- sample_n(as.data.frame(degree_new_nodes), 1, weight=V1)
-        attachment_nodes <- c(attachment_nodes, rownames(new_node))
-        attachment_degree <- c(attachment_degree, new_node$V1)
-    }
-    all_attach_nodes <- cbind(all_attach_nodes, attachment_nodes)
-    attachment_nodes <- c('these','those')
+sequential_words_degree <- read_csv('non_normalized/sequential_words_degree.csv') %>%
+  select(-X1)
+simultaneous_words_degree <- read_csv('non_normalized/simultaneous_words_degree.csv') %>%
+  select(-X1)
+loa_words_degree <- read_csv('non_normalized/loa_words_degree.csv') %>%
+  select(-X1)
+acquisition_words_degree <- read_csv('non_normalized/acquisition_words_degree.csv') %>%
+  select(-X1)
+  
+clean_net_data <- function(data_frame) {
+      #sequential_degree <- sequential_words_degree[1:1000]
+      output_frame <- data_frame[-c(seq(1,by=1,len=length(all_items))),]
+      
+      # r thinks the variables are still strings, not numeric. fix.
+      output_frame <- as.data.frame(sapply(output_frame, as.numeric))
+      output_frame <- compute_cis(output_frame)
+      output_frame$num_words <- seq.int(nrow(output_frame))
+      output_frame_avg <- output_frame %>%
+          transmute(mean = mean.random/num_words,
+                 ci_upper = upper.random/num_words,
+                 ci_lower = lower.random/num_words,
+                 num_words=num_words)
+      output_frame_avg
 }
 
+sequential_degree_avg <- clean_net_data(sequential_words_degree)
+simultaneous_degree_avg <- clean_net_data(simultaneous_words_degree)
+loa_degree_avg <- clean_net_data(loa_words_degree)
+acquisition_degree_avg <- clean_net_data(acquisition_words_degree)
 
-    # my initial attempt, no matrix algebra
-attachment_nodes2 <- c('woof woof', 'hi', 'cow', 'tiger', 'farm', 'giraffe', 'sticky')
-    node_nums <- which(rownames(wordbank_zeroed) %in% attachment_nodes2)
-    wordbank_zeroed[node_nums, node_nums]
-    rowSums(wordbank_zeroed[node_nums, node_nums])
-    degree_i <- summed_degree[node2]
+  
+ggplot(data=random_degree_avg, x=num_words, y=mean) +
+  geom_pointrange(aes(x=num_words, y=mean, ymax=ci_upper, ymin=ci_lower), color='lightgrey') +
+  geom_pointrange(data=acquisition_degree_avg, aes(x=num_words, y=mean, 
+                  ymax=ci_upper, ymin=ci_lower), color='lightblue') +
+  #geom_pointrange(data=simultaneous_degree_avg, aes(x=num_words, y=mean, 
+   #               ymax=ci_upper, ymin=ci_lower), color='green') +
+  geom_pointrange(data=degree_production_avg, aes(x=vocab_size, y=mean, 
+                                    ymin=ci_lower, ymax=ci_upper), color='rosybrown')+
+  #coord_cartesian(xlim= c(0,40)) +
+  theme_bw()
 
 
- 
- # left_overs <- all_items
-# maximized_nodes <- c('these', 'those')
-# left_overs <- left_overs[-(which(left_overs %in% maximized_nodes))]
-# 
-# for (i in 1:653) {
-#     more_nodes <- sapply(1:length(left_overs), function(i) 
-#              get_another_node(maximized_nodes, left_overs[[i]]))
-#     best_node <- left_overs[[which.max(more_nodes)]]
-#     maximized_nodes <- c(maximized_nodes, best_node)
-#     left_overs <- left_overs[-(which.max(more_nodes))]
-# }
-# 
-# maximized_nodes <- read_csv('data/maximized_nodes.csv')
-# maximized_nodes <- as.vector(maximized_nodes$x)
-# 
-# 
-# 
-# build_net_max <- function(num_nodes) {
-#     random_nodes <- maximized_nodes[1:num_nodes]
-#     
-    # random_graph <- graph_from_adjacency_matrix(
-    #     wordbank_zeroed[rownames(wordbank_zeroed) %in% random_nodes,
-    #            colnames(wordbank_zeroed) %in% random_nodes],
-    #  weighted = TRUE, mode = "undirected")
-#     random_graph
-# }
+
+#to get just the words, drop every row after all_items
+sequential_words <- 
+    sequential_words_degree[(1:(nrow(sequential_words_degree)/2)),]
+all_items[1]
+
+get_word_positions <- function(data_frame, how_many_words)
+    if(how_many_words==0) {
+          word_positions_fixed
+    } else {
+          word_positions <- which(data_frame==all_items[how_many_words])
+          word_positions_fixed <- 
+              sapply(1:length(word_positions), function(i) word_positions[i] - (655* (i-1)))
+          word_orders <- c(word_orders, i, word_positions_fixed)
+          this_many_more_words <- how_many_words - 1
+          get_word_positions(data_frame, this_many_more_words)
+    }
 
 ```
 
