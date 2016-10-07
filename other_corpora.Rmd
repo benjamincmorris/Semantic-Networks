@@ -1,0 +1,620 @@
+---
+title: "wikipedia_network"
+output: html_document
+---
+
+```{r, echo=FALSE, warning=FALSE}
+suppressPackageStartupMessages(library(devtools))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(wordVectors))
+suppressPackageStartupMessages(library(wordbankr))
+suppressPackageStartupMessages(library(readr))
+suppressPackageStartupMessages(library(lazyeval))
+suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(langcog))
+
+
+english_items <- get_item_data('English', 'WS') %>%
+  filter(type =='word') %>%
+  select(uni_lemma) %>%
+  distinct() 
+
+missing_items <- read_csv("data/missing_lemmas.csv")
+
+all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
+                        english_items$uni_lemma))
+#NOTE: This drops "an" from the cdi. Might be other cases where two definitions map onto the same uni_lemma
+```
+
+
+
+
+CHILDES: SCALE-FREE STATIC NETWORK?
+Training word2vec on CHILDES Data
+```{r, echo=FALSE, cache= TRUE}
+# full childes
+model_childes_stemmed = train_word2vec("Corpora/CHILDES_words_stemmed.txt",
+                                       output="w2v_vectors/CHILDES_stemmed_vectors.bin", threads = 4,
+                                       vectors = 100, window=6, cbow=1, min_count = 10, force= TRUE)
+
+childes_stemmed_sim <- cosineSimilarity(model_childes_stemmed, model_childes_stemmed)
+#set to zero all the negative values in the matrix
+childes_stemmed_zeroed <- ifelse(childes_stemmed_sim < 0, 0, childes_stemmed_sem)
+#also set the self weights to zero before normalizing
+diag(childes_stemmed_zeroed) <- 0
+childes_stemmed_degrees <- rowSums(childes_stemmed_zeroed)
+hist(childes_stemmed_degrees)
+
+all_cdi_words_stemmed <- read_csv('~/Desktop/cdi_words_stemmed.txt', col_names='uni_lemma')
+
+stemmed_and_unstemmed <- bind_cols(data.frame(unstemmed = all_cdi_words), all_cdi_words_stemmed) %>%
+  mutate(in_childes_stemmed = uni_lemma %in% rownames(model_wordbank_stemmed),
+         in_childes = unstemmed %in% rownames(model_wordbank))
+
+model_wordbank_stemmed <- model_childes_mom[[which(rownames(model_childes_stemmed) %in% 
+                                                     all_cdi_words_stemmed$uni_lemma), average=FALSE]]
+wordbank_stemmed_sim <- cosineSimilarity(model_wordbank_stemmed, model_wordbank_stemmed)
+#set to zero all the negative values in the matrix
+wordbank_stemmed_zeroed <- ifelse(wordbank_stemmed_sim < 0, 0, wordbank_stemmed_sim)
+#also set the self weights to zero before normalizing
+diag(wordbank_stemmed_zeroed) <- 0
+wordbank_stemmed_degrees <- rowSums(wordbank_stemmed_zeroed, na.rm=TRUE)
+hist(wordbank_stemmed_degrees)
+
+
+
+
+
+data<- wordbank_stemmed_degrees
+min_degrees <- seq(0, max(data), 
+                   max(data)/50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(data >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+
+
+
+
+all_items <- rownames(wordbank_zeroed)
+
+
+model = read.vectors("w2v_vectors/full_vectors.bin")
+
+# Read back the csv with a new colum of replacement lemmas
+missing_items <- read_csv("data/missing_lemmas.csv")
+
+all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
+                        english_items$uni_lemma))
+
+#filter the matrix to only include CDI words
+model_wordbank <- model[[which(rownames(model) %in% all_cdi_words), average=FALSE]]
+model_wordbank_sorted <-model_wordbank[sort(rownames(model_wordbank)),]
+
+#Special cases
+special_cases <- missing_items %>%
+  filter(!is.na(addword) | !is.na(subword))
+
+rename_cases <- missing_items %>%
+  filter(is.na(addword) & is.na(subword),
+         !is.na(word)) %>%
+  arrange(uni_lemma)
+
+extra_rows <- rownames(model_wordbank_sorted)  %in% rename_cases$word
+rownames(model_wordbank_sorted)[extra_rows] <- rename_cases$uni_lemma
+
+special_case_vector <- function(special_case) {
+  if(!is.na(special_case$addword)) {
+   model_wordbank[special_case$word,] + 
+      model_wordbank[special_case$addword,]
+  } else {
+    model_wordbank[special_case$word,] - 
+      model_wordbank[special_case$subword,]
+  }
+}
+
+special_case_vectors <- t(sapply(1:nrow(special_cases), 
+                               function(x) special_case_vector(special_cases[x,]), 
+                               simplify = "matrix"))
+rownames(special_case_vectors) <- special_cases$uni_lemma
+
+model_wordbank_specialcases <- rbind(model_wordbank_sorted, special_case_vectors)
+
+model_wordbank_unilemmas <- as.VectorSpaceModel(model_wordbank_specialcases[rownames(model_wordbank_specialcases)
+                                                        %in% english_items$uni_lemma, ])
+
+#create word similarity matrix
+wordbank_sim <- cosineSimilarity(model_wordbank_unilemmas, model_wordbank_unilemmas)
+
+#set to zero all the negative values in the matrix
+wordbank_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
+#also set the self weights to zero before normalizing
+diag(wordbank_zeroed) <- 0
+
+all_items <- rownames(wordbank_zeroed)
+```
+
+```{r, echo=FALSE}
+node_degrees <- data.frame(final_degree= rowSums(wordbank_zeroed))
+# node_degrees <- data.frame(final_degree= rowSums(exp(4*wordbank_zeroed)-1))
+node_degrees$uni_lemma <- rownames(node_degrees)
+qplot(x=node_degrees$final_degree, binwidth=5) 
+
+binned_degree_5 <- (.bincode(node_degrees$final_degree, breaks=seq.int(from = 0, 110, by= 5))) * 5
+binned_node_degrees <- cbind(node_degrees, binned_degree_5) %>%
+  group_by(binned_degree_5) %>%
+  summarize(count=n()) %>%
+  mutate(count_logged = log10(count),
+         degree_logged= log10(binned_degree_5))
+ggplot(data=binned_node_degrees) +
+  geom_point(aes(x=degree_logged, y=count_logged))
+
+binned_nodes_normal <- binned_node_degrees %>%
+  mutate(count_normalized=(count_logged/(sum(count_logged))))
+ggplot(data=binned_nodes_normal) +
+  geom_point(aes(x=degree_logged, y=count_normalized))
+
+degree_unweighted <- data.frame(final_degree= rowSums(wordbank_zeroed > 0))
+degree_unweighted$uni_lemma <- rownames(node_degrees)
+qplot(x=degree_unweighted$final_degree, binwidth=5) 
+
+
+
+
+
+
+full_node_degrees <- data.frame(final_degree= rowSums(full_corpus_zeroed))
+full_node_degrees$uni_lemma <- rownames(full_node_degrees)
+
+word_categories <- english_data %>%
+  distinct(uni_lemma, lexical_category)
+full_degree_categories <- left_join(full_node_degrees, word_categories)
+
+min_degrees <- seq(0, 1500, 50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x) mean(full_degree_categories$final_degree >= x)),
+                               degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+
+qplot(x = degree, y = prop, data = barabsi_degrees) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+qplot(x = 1:127, y = random_degrees) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+lexical_categories <- unique(full_degree_categories$lexical_category)
+
+degree_dist <- sapply(lexical_categories, function(cat) {
+  sapply(min_degrees, function(x) mean(filter(full_degree_categories, 
+                                              lexical_category == cat)$final_degree >= x))
+  }) %>%
+  as.data.frame() %>%
+  mutate(degree = min_degrees) %>%
+  gather(lexical_category, prop, -degree)
+
+
+qplot(x = degree, y = prop, data = degree_dist) + 
+  facet_wrap(~lexical_category) +
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+
+
+
+with(filter(wordbank_with_cat, lexical_category == "function_words"), cor(log10(word_count),final_degree))
+
+
+
+#plot 2
+word_categories <- english_data %>%
+  distinct(uni_lemma, lexical_category)
+degree_categories <- left_join(node_degrees, word_categories)
+qplot(data=degree_categories, x=final_degree) +
+  facet_wrap(~lexical_category) +
+  scale_x_log10() +
+  scale_y_log10()
+
+
+
+degree_categories %>%
+  group_by(lexical_category) %>%
+  summarize(mean_degree = mean(final_degree),
+            upper.degree = quantile(x=final_degree, probs=.975),
+            lower.degree = quantile(x=final_degree, probs=.025))
+
+
+
+### INCORPORATING FREQUENCY MEASURRES #####
+wordbank_nouns <- word_categories %>% 
+    filter(lexical_category=='nouns') 
+childes_frequency <- read_csv('data/childes_english.csv') %>% 
+  filter(word %in% rownames(wordbank_zeroed)) %>%
+  filter(word %in% wordbank_nouns$uni_lemma)
+#still need to deal with special cases. though also, more seem to be missing than just that.
+
+wordbank_sim_nouns <- wordbank_zeroed[
+                          rownames(wordbank_zeroed) %in% childes_frequency$word,
+                          colnames(wordbank_zeroed) %in% childes_frequency$word]
+wordbank_frequency$logged_count <- log10(childes_frequency$word_count)
+
+frequency_matrix <- tcrossprod(childes_frequency$word_count)
+wordbank_sim_frequency <- wordbank_sim_nouns * frequency_matrix
+
+wordbank_degrees_with_freq <- data.frame(final_degree= rowSums(wordbank_zeroed))
+wordbank_degrees_with_freq$uni_lemma <- rownames(wordbank_degrees_with_freq)
+hist(wordbank_degrees_with_freq$final_degree)
+hist(childes_degrees_with_freq$final_degree)
+
+min_degrees <- seq(0, max(wordbank_degrees_with_freq$final_degree), 
+                   max(wordbank_degrees_with_freq$final_degree)/50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(wordbank_degrees_with_freq$final_degree >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+
+### are the associations doing anything? ###
+wordbank_identical <- ifelse(wordbank_zeroed > 0, .5, 0)
+
+
+
+
+#discretizing
+wordbank_zeroed_assocs <- read_csv('shiny_apps/networks/assocs/w2v_assocs.csv')
+
+wordbank_long <- wordbank_zeroed_assocs %>%
+ gather(target, assoc, -in_node)
+
+wordbank_degrees <- wordbank_long %>%
+ group_by(in_node) %>%
+ summarise(degree = sum(assoc))
+
+wordbank_degrees <- wordbank_long %>%
+ group_by(in_node) %>%
+ summarise(degree = sum(exp(9*assoc)))
+
+
+
+
+###
+english_data %>% 
+    filter(value=='produces', age==18) %>% select(vocab_size, data_id)  %>% distinct(data_id, vocab_size)
+
+john_words <- english_data %>% 
+    filter(value=='produces') %>% 
+    filter(data_id==51861) %>%
+    select(uni_lemma)
+
+john_degrees <- node_degrees %>% filter(uni_lemma %in% john_words$uni_lemma)
+
+words_from_kids <- english_data %>% 
+    filter(value=='produces', age==16) %>%
+    select(uni_lemma)
+words_from_kids_degrees <- left_join(words_from_kids, node_degrees)
+hist(words_from_kids_degrees$final_degree)
+```
+
+
+
+
+
+Run Word2Vec on Wikipedia Words
+```{r, echo=FALSE, cache= TRUE}
+# # WIKI Test
+# dumped on 9.20.2016
+# # Note, cutoff changed to a minimum of 100 counts/word.
+# model = train_word2vec("wiki_full.txt",output="w2v_vectors/wiki_full_vectors.bin",
+       # threads = 4,vectors = 100, window=6, cbow=1, min_count = 100, force= TRUE)
+model_full = read.vectors("w2v_vectors/wiki_full_vectors.bin")
+
+
+
+# t1<- proc.time()
+# # count <-1 
+# # degree_start <- data.frame(node= 'example',degree= 1)
+# while ((nrow(model_full) - count)  > 250) {
+#           model_subset <- model_full[(count+1):(count+250),]
+#           new_sim <-  (cosineSimilarity(model_subset, model_full))
+#           new_sim_zeroed <- ifelse(new_sim < 0, 0, new_sim)
+#           diag(new_sim_zeroed) <- 0
+#           degree_start <-  rbind(degree_start, data.frame(node = rownames(new_sim_zeroed),
+#                                       degree = rowSums(new_sim_zeroed)))
+#           count <- count + 250
+# }
+# proc.time() - t1
+
+wiki_degrees <- read_csv('data/wiki_degrees.csv') %>% select(-X1)
+# 
+# # missing_items <- read_csv("data/missing_lemmas.csv")
+# # all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
+# #                         english_items$uni_lemma))
+# # 
+# # wiki_wordbank <- model[[which(rownames(model) %in% all_cdi_words), average=FALSE]]
+# 
+
+
+######## SCALE FREEE OR RANDOM ##################
+# wiki_degrees <- data.frame(final_degree= rowSums(wiki_zeroed))
+# wiki_degrees$uni_lemma <- rownames(wiki_degrees)
+wiki_degrees <- wiki_degrees[-1:-2,]
+
+wiki_degrees_wordbank <- wiki_degrees %>%
+    filter(node %in% all_cdi_words)
+hist(wiki_degrees$degree)
+
+min_degrees <- seq(0, max(wiki_degrees$degree), 
+                   max(wiki_degrees$degree)/50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(wiki_degrees$degree >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+```
+
+
+
+
+
+Training word2vec on PICTURE BOOK Data
+```{r, echo=FALSE, cache= TRUE}
+# full childes
+
+# prep_word2vec('100Books.txt', '100_books_cleaned.txt', lowercase=TRUE)
+
+model = train_word2vec("corpora/100_books_cleaned.txt",output="w2v_vectors/books_vectors.bin",
+        threads = 4,vectors = 100, window=6, cbow=1, min_count = 2, force= TRUE)
+
+
+#create word similarity matrix
+books_sim <- cosineSimilarity(model,model)
+
+#set to zero all the negative values in the matrix
+books_zeroed <- ifelse(books_sim < 0, 0, books_sim)
+#also set the self weights to zero before normalizing
+diag(books_zeroed) <- 0
+
+books_degrees <- data.frame(final_degree= rowSums(books_zeroed))
+books_degrees$uni_lemma <- rownames(books_degrees)
+books_degrees <- books_degrees %>% arrange(final_degree)
+books_degrees[1:50,]
+
+hist(books_degrees$final_degree)
+
+min_degrees <- seq(0, max(books_degrees$final_degree), 
+                   max(books_degrees$final_degree)/50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(books_degrees$final_degree >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+```
+
+
+SB Corpus
+```{r}
+model_SB = train_word2vec("corpora/SB_words.txt",output="w2v_vectors/SB_vectors.bin",
+        threads = 4,vectors = 300, window=6, cbow=1, min_count = 10, force= TRUE)
+model_SB <- model_SB[-1,]
+
+#create word similarity matrix
+SB_sim <- cosineSimilarity(model_SB,model_SB)
+
+#set to zero all the negative values in the matrix
+SB_zeroed <- ifelse(SB_sim < 0, 0, SB_sim)
+#also set the self weights to zero before normalizing
+diag(SB_zeroed) <- 0
+
+SB_degrees <- data.frame(final_degree= rowSums(SB_zeroed))
+SB_degrees$uni_lemma <- rownames(SB_degrees)
+hist(SB_degrees$final_degree)
+
+SB_degrees_wordbank <- SB_degrees %>%
+    filter(uni_lemma %in% all_cdi_words)
+
+min_degrees <- seq(0, max(SB_degrees_wordbank$final_degree), 
+                   max(SB_degrees_wordbank$final_degree)/50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(SB_degrees_wordbank$final_degree >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw() + 
+  geom_smooth(method = "lm")
+
+z <- nls(prop ~ degree^b,data = full_degree_dist)
+
+```
+
+
+COCA
+```{r,echo=FALSE}
+# prep_word2vec('~/Documents/corpora/coca/', 'coca.txt', lowercase=TRUE)
+
+model_COCA = train_word2vec("coca.txt",output="coca_vectors.bin",
+        threads = 4,vectors = 300, window=6, cbow=1, min_count = 100, force= TRUE)
+```
+
+
+
+USF Association Norm Data
+```{r}
+association_norms <- read_csv('data/usf_association_norms.csv') %>%
+    group_by(TARGET) %>%
+    summarize(degree=n())
+
+norms_USF <- read_csv('data/usf_association_norms.csv')
+
+# all_words <- expand.grid(CUE = unique(norms_USF$CUE),
+#                          target = unique(norms_USF$TARGET))
+
+
+connected_target_cue_USF <- norms_USF %>%
+    group_by(TARGET,CUE) %>%
+    summarize(connected_target = FSG > 0)
+
+connected_cue_target_USF <- norms_USF %>%
+  rename(TARGET = CUE, CUE = TARGET) %>%
+  group_by(TARGET, CUE) %>%
+  summarize(connected_target = FSG > 0)
+
+
+connected_both_USF <- bind_rows(connected_target_cue_USF, connected_cue_target_USF) %>%
+  distinct(TARGET, CUE, .keep_all = TRUE) %>%
+  group_by(TARGET) %>%
+  summarize(degree=n())
+
+
+connected_both_USF_wordbank <- connected_both_USF
+connected_both_USF_wordbank$TARGET <- tolower(connected_both_USF$TARGET)
+connected_both_USF_wordbank <- connected_both_USF_wordbank %>% 
+    filter(TARGET %in% all_items)
+```
+
+
+De Deyne: SWOW Assocation Data
+```{r, echo=FALSE}
+# Not cleaned fully
+# drop null response/don't recognize word trials
+#   odd cases where 1st associate is null, but 2nd or 3rd are given? drop.
+associations <-read_csv('data/SWOW_associations.csv')
+associations_dropped <- associations[!associations$asso1Clean == 'x',]
+associations_dropped <- associations_dropped[!associations_dropped$asso2Clean == 'x',]
+associations_dropped <- associations_dropped[!associations_dropped$asso3Clean == 'x',]
+associations_dropped$asso1Clean <- tolower(associations_dropped$asso1Clean)
+associations_dropped$asso2Clean <- tolower(associations_dropped$asso2Clean)
+associations_dropped$asso3Clean <- tolower(associations_dropped$asso3Clean)
+
+
+
+connected_target_cue_SWOW <-associations_dropped %>%
+    filter(cue %in% all_items)  %>% 
+    filter(asso1Clean %in% all_items)  %>% 
+    group_by(cue,asso1Clean)
+
+connected_cue_target_SWOW <-associations_dropped %>%
+    filter(cue %in% all_items)  %>% 
+    filter(asso1Clean %in% all_items)  %>% 
+    rename(cue = asso1Clean, asso1Clean = cue) %>%
+    group_by(cue,asso1Clean)
+
+
+connected_both_SWOW <- bind_rows(connected_target_cue_SWOW, connected_cue_target_SWOW) %>%
+  distinct(cue, asso1Clean, .keep_all = TRUE) %>%
+  group_by(cue) %>%
+  summarize(degree=n()) %>%
+  filter(degree>1) %>%
+  arrange(desc(degree))
+
+
+wordbank_filtered <- wordbank_zeroed[which(rownames(wordbank_zeroed) %in% 
+                                                     connected_both_SWOW$cue), 
+                                      which(colnames(wordbank_zeroed) %in%
+                                                      connected_both_SWOW$cue)]
+
+
+childes_degrees <- data.frame(childes_degree = rowSums(wordbank_filtered)) %>%
+  mutate(cue = rownames(.))
+  
+
+degree_differences <- left_join(connected_both_SWOW, childes_degrees)
+
+######### WORDBANK SUBSET OF ASSOCIATES ############
+connected_both_SWOW_wordbank <- connected_both_SWOW %>% 
+    filter(cue %in% all_items)
+
+
+#####
+all_items<- (wiki_degrees$node)
+wiki_degrees_filtered <- wiki_degrees %>% filter(node %in% connected_both_SWOW$cue) %>%
+  rename(wiki_degree=degree)
+
+degree_differences_wiki <- left_join(connected_both_SWOW, wiki_degrees_filtered, by=c('cue'='node')) %>%
+  filter(cue %in% all_cdi_words) %>%
+  mutate(degree = degree/sum(degree),
+         wiki_degree = wiki_degree/sum(wiki_degree))
+
+  mutate_each(funs(~ x/sum(x)), c(degree, wiki_degree))
+
+
+##### USING WITH THE MULTIPLE ASSOCIATES#########
+multiple_1 <- associations_dropped %>%
+  select(cue, asso1Clean)
+multiple_2 <- associations_dropped %>%
+  select(cue, asso2Clean) %>%
+  rename(asso1Clean = asso2Clean)
+multiple_3 <- associations_dropped %>%
+  select(cue, asso3Clean) %>%
+  rename(asso1Clean = asso3Clean)
+multiple_associations <- rbind(multiple_1, multiple_2, multiple_3)
+
+connected_target_cue_SWOW <-multiple_associations %>%
+    group_by(cue,asso1Clean)
+
+connected_cue_target_SWOW <-multiple_associations %>%
+    rename(cue = asso1Clean, asso1Clean = cue) %>%
+    group_by(cue,asso1Clean)
+
+all_assos_SWOW <- bind_rows(connected_target_cue_SWOW, connected_cue_target_SWOW) %>%
+  distinct(cue, asso1Clean, .keep_all = TRUE) %>%
+  group_by(cue) %>%
+  summarize(degree=n()) %>%
+  filter(degree>1) %>%
+  arrange(desc(degree))
+
+all_assos_SWOW_wordbank <- all_assos_SWOW %>% 
+    filter(cue %in% all_items)
+```
+
+
+PLOTTING
+```{r}
+
+######## PLOTTING ########
+##set this to whatever you want to plot ##
+plot_me <- connected_both_SWOW
+title <- expression(connected_both_SWOW)
+logspace <- function(d1, d2, n) exp(log(10)* seq(d1, d2, length.out=n))
+
+min_degrees <- logspace(0, log10(max(plot_me$degree)), 100)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(plot_me$degree  >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  #scale_y_log10(breaks = logspace(log10(10^-6),1,10), limits=c(10^-6, 1)) +
+  theme_bw() +
+  ggtitle(label=title)
+```
+
+
+

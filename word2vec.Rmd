@@ -51,11 +51,15 @@ english_items <- get_item_data('English', 'WS') %>%
 Training word2vec on CHILDES Data
 ```{r, echo=FALSE, cache= TRUE}
 # full childes
-# model = train_word2vec("data/CHILDES_words_only.txt",output="full_vectors.bin",
-#        threads = 4,vectors = 100, window=6, cbow=1, min_count = 10, force= TRUE)
+# model = train_word2vec("Corpora/CHILDES_words_stemmed.txt",
+#                                        output="w2v_vectors/CHILDES_stemmed_vectors.bin", threads = 4,
+#                                        vectors = 100, window=6, cbow=1, min_count = 10, force= TRUE)
 
-model = read.vectors("data/full_vectors.bin")
 
+
+model = read.vectors("w2v_vectors/CHILDES_stemmed_vectors.bin")
+
+######## Special case code needs to be updated to deal with stemming/lemmatization ####### 
 # Write a csv of the missing lemmas to join back in
 # english_items_missing <- english_items %>%
   #filter(!uni_lemma %in% rownames(model)) %>%
@@ -128,23 +132,24 @@ diag(wordbank_zeroed) <- 0
 
 
 ###ALLLLL WORDS###
-full_corpus_sim <- cosineSimilarity(model,model)
-full_corpus_zeroed <- ifelse(full_corpus_sim < 0, 0, full_corpus_sim)
-diag(full_corpus_zeroed) <- 0
-
-full_degree <- rowSums(full_corpus_zeroed) 
-all_all_items <- rownames(full_corpus_zeroed)
-
-ordered_all_words <- sort(full_degree, decreasing=TRUE)
-
-cdi_with_all_words <- (rowSums(full_corpus_zeroed[rownames(full_corpus_zeroed) 
-                                                  %in% all_cdi_words,]))
-cdi_with_all_words <- sort(cdi_with_all_words, decreasing = TRUE)
-cdi_with_all_words[1:50]
-
-pref_acquisiton_ordered <- order(probability, decreasing= TRUE)
-all_items[pref_acquisiton_ordered[1:50]]
+# full_corpus_sim <- cosineSimilarity(model,model)
+# full_corpus_zeroed <- ifelse(full_corpus_sim < 0, 0, full_corpus_sim)
+# diag(full_corpus_zeroed) <- 0
+# 
+# full_degree <- rowSums(full_corpus_zeroed) 
+# all_all_items <- rownames(full_corpus_zeroed)
+# 
+# ordered_all_words <- sort(full_degree, decreasing=TRUE)
+# 
+# cdi_with_all_words <- (rowSums(full_corpus_zeroed[rownames(full_corpus_zeroed) 
+#                                                   %in% all_cdi_words,]))
+# cdi_with_all_words <- sort(cdi_with_all_words, decreasing = TRUE)
+# cdi_with_all_words[1:50]
+# 
+# pref_acquisiton_ordered <- order(probability, decreasing= TRUE)
+# all_items[pref_acquisiton_ordered[1:50]]
 ```
+
 
 
 CLEAN UP THE WORDBANK DATA AND MATCH TO WORDS PRESENT IN OUR MODEL
@@ -177,7 +182,6 @@ english_kids <-
 
 all_items <- rownames(wordbank_zeroed)
 ```
-
 
 
 
@@ -338,11 +342,9 @@ correlations_longitudinal <- transitivity_longitudinal %>%
 ```
 
 
-
-
-
+DEGREE: Random and Kid Data
 ```{r, echo=FALSE}
-### DEGREE ###
+###  ###
 #set a function for making a random graph of size N and computing degree (weighted)
 sample_degree <- function(num_nodes) {
     random_nodes <- sample(all_items, num_nodes)
@@ -446,10 +448,9 @@ ggplot(aes(x = num_words, y = mean), data = random_degree_avg) +
 ```
 
 
-
-
+GEODESICS: Random and Kid Data
 ```{r, echo=FALSE}
-### GEODESICS ###
+###  ###
 #set a function for making a random graph of size N and computing geodesics
 random_net <- function(num_nodes) {
     random_nodes <- sample(all_items, num_nodes)
@@ -626,8 +627,7 @@ ggplot(aes(x = num_words, y = geo), data = ordered_nets_geo) +
 ```
 
 
-
-SWAPPING WORD ORDER TO EXAMINE EFFECTS ON MODEL
+Re-ordered: SWAPPING WORD ORDER TO EXAMINE EFFECTS ON MODEL
 ```{r, echo=FALSE}
 ordered_words
 ordered_words_swap <- kids_word_order
@@ -683,8 +683,8 @@ ggplot(aes(x = num_words, y = mean), data = transitivity_production) +
 ```
 
 
+PROBABILISTIC ordered networks 
 ```{r, echo= false}
-###### building ordered networks probablistically ##########
 build_net_prob <- function(num_nodes) {
     random_nodes <- kids_word_order %>%
       sample_n(num_nodes, weight = exp(100*count)) 
@@ -788,8 +788,8 @@ ggplot(aes(x = production, y = mean), data = geodesic_production) +
 ```
 
 
+PREFERENTIAL ACQUISITION MODELS
 ```{r, echo = FALSE}
-########## PREFERENTIAL ACQUISITION MODELS ##############
 # get the degree locally for each node in final network
 wordbank_graph <- graph_from_adjacency_matrix(wordbank_normal,
                                     mode="undirected",weighted=TRUE)
@@ -908,6 +908,7 @@ ggplot(aes(x = num_words, y = mean), data = kid_acquisition_degree_production) +
   geom_smooth(color='red') +
   theme_bw()
 ```
+
 
 Look at correlation of Preferential Acquisition order and true order
 ```{r}
@@ -1121,18 +1122,19 @@ simultaneous_words_degree <- replicate(50,
                       'simultaneous'))
 
 ####### LURE OF THE ASSOCIATES ########
-loa_words_degree <- replicate(50, 
+loa_words_degree <- replicate(20000, 
       get_matrix_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0, 'loa'))
 
 
 ####### ACQUISITION ########
-acquisition_words_degree <- replicate(50, 
+acquisition_words_degree <- replicate(1000, 
         get_matrix_nodes(attachment_nodes, length(all_items) - length(attachment_nodes), 0, 
                       'acquisition'))
 
 
-write.csv(sequential_words_degree, 'non_normalized/sequential_words_degree.csv')
-write.csv(loa_words_degree, 'non_normalized/loa_words_degree.csv')
+# write.csv(sequential_words_degree, 'non_normalized/sequential_words_degree.csv')
+# write.csv(loa_words_degree, 'non_normalized/loa_words_degree.csv')
+# write.csv(acquisition_words_degree, 'non_normalized/acquisition_words_degree.csv')
 
 sequential_words_degree <- read_csv('non_normalized/sequential_words_degree.csv') %>%
   select(-X1)
@@ -1143,6 +1145,14 @@ loa_words_degree <- read_csv('non_normalized/loa_words_degree.csv') %>%
 acquisition_words_degree <- read_csv('non_normalized/acquisition_words_degree.csv') %>%
   select(-X1)
   
+compute_cis <- function(data_frame) {
+    upper.random <- apply(data_frame, 1, function(x) quantile(x, probs=.975,na.rm = TRUE))
+    lower.random <- apply(data_frame, 1, function(x) quantile(x, probs=.025,na.rm = TRUE))
+    mean.random <- apply(data_frame, 1, function(x) mean(x, na.rm = TRUE))
+    new_data <- data.frame(mean.random, upper.random, lower.random)
+    new_data
+}
+
 clean_net_data <- function(data_frame) {
       #sequential_degree <- sequential_words_degree[1:1000]
       output_frame <- data_frame[-c(seq(1,by=1,len=length(all_items))),]
@@ -1167,36 +1177,312 @@ acquisition_degree_avg <- clean_net_data(acquisition_words_degree)
   
 ggplot(data=random_degree_avg, x=num_words, y=mean) +
   geom_pointrange(aes(x=num_words, y=mean, ymax=ci_upper, ymin=ci_lower), color='lightgrey') +
-  geom_pointrange(data=acquisition_degree_avg, aes(x=num_words, y=mean, 
+  geom_pointrange(data=sequential_degree_avg, aes(x=num_words, y=mean, 
                   ymax=ci_upper, ymin=ci_lower), color='lightblue') +
-  #geom_pointrange(data=simultaneous_degree_avg, aes(x=num_words, y=mean, 
-   #               ymax=ci_upper, ymin=ci_lower), color='green') +
   geom_pointrange(data=degree_production_avg, aes(x=vocab_size, y=mean, 
-                                    ymin=ci_lower, ymax=ci_upper), color='rosybrown')+
-  #coord_cartesian(xlim= c(0,40)) +
+                  ymin=ci_lower, ymax=ci_upper), color='rosybrown') +
+  geom_pointrange(data=acquisition_degree_avg, aes(x=num_words, y=mean, 
+                 ymax=ci_upper, ymin=ci_lower), color='green') +
+  coord_cartesian(xlim= c(0,20)) +
   theme_bw()
 
 
 
-#to get just the words, drop every row after all_items
-sequential_words <- 
-    sequential_words_degree[(1:(nrow(sequential_words_degree)/2)),]
-all_items[1]
-
-get_word_positions <- function(data_frame, how_many_words)
+##### INVESTIGATING THE WORDS GENERATED BY MODELS#######
+word_orders <- as.data.frame(matrix(NA, ncol = 1001, nrow = 1))
+get_word_positions <- function(data_frame, how_many_words, initial_df_output)
     if(how_many_words==0) {
-          word_positions_fixed
+          as.data.frame(sapply(initial_df_output, as.numeric))
     } else {
           word_positions <- which(data_frame==all_items[how_many_words])
           word_positions_fixed <- 
-              sapply(1:length(word_positions), function(i) word_positions[i] - (655* (i-1)))
-          word_orders <- c(word_orders, i, word_positions_fixed)
+              sapply(1:length(word_positions), function(i) (word_positions[i] - (655* (i-1))))
+          new_row <- c(all_items[how_many_words], t(word_positions_fixed))
+          word_orders_updated <- rbind(initial_df_output, new_row)
           this_many_more_words <- how_many_words - 1
-          get_word_positions(data_frame, this_many_more_words)
+          get_word_positions(data_frame, this_many_more_words, word_orders_updated)
     }
+
+# function takes full data for each model (word+degrees), returns mean position + cis for each word
+clean_word_positions <- function(data_frame) {
+      #to get just the words, drop every row after all_items. 
+      clean_df <- data_frame[(1:(nrow(data_frame)/2)),]
+      clean_df <- get_word_positions(clean_df, length(all_items), word_orders) 
+      clean_df <- clean_df[-1,]
+      clean_df <- clean_df %>% select(-V1)
+      clean_df_averages <- compute_cis(clean_df)
+      clean_df_averages$this_word <- seq.int(nrow(clean_df_averages))
+      clean_df_averages <- mutate(clean_df_averages, 
+                                           this_word_uni = all_items[656- this_word])
+      clean_df_averages$this_word_uni <- factor(clean_df_averages$this_word_uni, 
+              levels = clean_df_averages$this_word_uni[order(clean_df_averages$mean.random)])
+      clean_df_averages
+}
+
+acquisition_words_averages <- clean_word_positions(acquisition_words_degree)
+loa_words_averages <- clean_word_positions(loa_words_degree)
+simultaneous_words_averages <- clean_word_positions(simultaneous_words_degree)
+sequential_words_averages <- clean_word_positions(sequential_words_degree)
+
+sequential_words_categories <- left_join(sequential_words_averages, word_categories, 
+                                       by=c('this_word_uni'= 'uni_lemma')) 
+sequential_words_categories$this_word_uni <- factor(sequential_words_categories$this_word_uni, 
+      levels = sequential_words_categories$this_word_uni[order(sequential_words_categories$mean.random)])
+
+
+acquisition_words_categories <- left_join(acquisition_words_averages, word_categories, 
+                                       by=c('this_word_uni'= 'uni_lemma')) 
+acquisition_words_categories$this_word_uni <- factor(acquisition_words_categories$this_word_uni, 
+      levels = acquisition_words_categories$this_word_uni[order(acquisition_words_categories$mean.random)])
+
+
+ggplot(x=this_word_uni, y=mean.random, data=acquisition_words_categories) + 
+  # geom_pointrange(aes(x=this_word_uni, y=mean.random,
+                      # ymin=lower.random,ymax=upper.random), color='rosybrown') +
+  geom_point(aes(x=this_word_uni, y=(mean.random), color='rosybrown')) +
+  #coord_cartesian(xlim=c(1, 50)) +
+  facet_wrap(~lexical_category)+
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+ 
 
 ```
 
+
+
+SCALE-FREE STATIC NETWORK?
+```{r, echo=FALSE}
+node_degrees <- data.frame(final_degree= rowSums(wordbank_zeroed))
+# node_degrees <- data.frame(final_degree= rowSums(exp(4*wordbank_zeroed)-1))
+node_degrees$uni_lemma <- rownames(node_degrees)
+qplot(x=node_degrees$final_degree, binwidth=5) 
+
+binned_degree_5 <- (.bincode(node_degrees$final_degree, breaks=seq.int(from = 0, 110, by= 5))) * 5
+binned_node_degrees <- cbind(node_degrees, binned_degree_5) %>%
+  group_by(binned_degree_5) %>%
+  summarize(count=n()) %>%
+  mutate(count_logged = log10(count),
+         degree_logged= log10(binned_degree_5))
+ggplot(data=binned_node_degrees) +
+  geom_point(aes(x=degree_logged, y=count_logged))
+
+binned_nodes_normal <- binned_node_degrees %>%
+  mutate(count_normalized=(count_logged/(sum(count_logged))))
+ggplot(data=binned_nodes_normal) +
+  geom_point(aes(x=degree_logged, y=count_normalized))
+
+degree_unweighted <- data.frame(final_degree= rowSums(wordbank_zeroed > 0))
+degree_unweighted$uni_lemma <- rownames(node_degrees)
+qplot(x=degree_unweighted$final_degree, binwidth=5) 
+
+
+
+
+
+
+full_node_degrees <- data.frame(final_degree= rowSums(full_corpus_zeroed))
+full_node_degrees$uni_lemma <- rownames(full_node_degrees)
+
+word_categories <- english_data %>%
+  distinct(uni_lemma, lexical_category)
+full_degree_categories <- left_join(full_node_degrees, word_categories)
+
+min_degrees <- seq(0, 1500, 50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x) mean(full_degree_categories$final_degree >= x)),
+                               degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+
+qplot(x = degree, y = prop, data = barabsi_degrees) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+qplot(x = 1:127, y = random_degrees) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+lexical_categories <- unique(full_degree_categories$lexical_category)
+
+degree_dist <- sapply(lexical_categories, function(cat) {
+  sapply(min_degrees, function(x) mean(filter(full_degree_categories, 
+                                              lexical_category == cat)$final_degree >= x))
+  }) %>%
+  as.data.frame() %>%
+  mutate(degree = min_degrees) %>%
+  gather(lexical_category, prop, -degree)
+
+
+qplot(x = degree, y = prop, data = degree_dist) + 
+  facet_wrap(~lexical_category) +
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+
+
+
+with(filter(wordbank_with_cat, lexical_category == "function_words"), cor(log10(word_count),final_degree))
+
+
+
+#plot 2
+word_categories <- english_data %>%
+  distinct(uni_lemma, lexical_category)
+degree_categories <- left_join(node_degrees, word_categories)
+qplot(data=degree_categories, x=final_degree) +
+  facet_wrap(~lexical_category) +
+  scale_x_log10() +
+  scale_y_log10()
+
+
+
+degree_categories %>%
+  group_by(lexical_category) %>%
+  summarize(mean_degree = mean(final_degree),
+            upper.degree = quantile(x=final_degree, probs=.975),
+            lower.degree = quantile(x=final_degree, probs=.025))
+
+
+
+### INCORPORATING FREQUENCY MEASURRES #####
+wordbank_nouns <- word_categories %>% 
+    filter(lexical_category=='nouns') 
+childes_frequency <- read_csv('data/childes_english.csv') %>% 
+  filter(word %in% rownames(wordbank_zeroed)) %>%
+  filter(word %in% wordbank_nouns$uni_lemma)
+#still need to deal with special cases. though also, more seem to be missing than just that.
+
+wordbank_sim_nouns <- wordbank_zeroed[
+                          rownames(wordbank_zeroed) %in% childes_frequency$word,
+                          colnames(wordbank_zeroed) %in% childes_frequency$word]
+wordbank_frequency$logged_count <- log10(childes_frequency$word_count)
+
+frequency_matrix <- tcrossprod(childes_frequency$word_count)
+wordbank_sim_frequency <- wordbank_sim_nouns * frequency_matrix
+
+wordbank_degrees_with_freq <- data.frame(final_degree= rowSums(wordbank_zeroed))
+wordbank_degrees_with_freq$uni_lemma <- rownames(wordbank_degrees_with_freq)
+hist(wordbank_degrees_with_freq$final_degree)
+hist(childes_degrees_with_freq$final_degree)
+
+min_degrees <- seq(0, max(wordbank_degrees_with_freq$final_degree), 
+                   max(wordbank_degrees_with_freq$final_degree)/50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(wordbank_degrees_with_freq$final_degree >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+
+
+### are the associations doing anything? ###
+wordbank_identical <- ifelse(wordbank_zeroed > 0, .5, 0)
+
+
+
+
+#discretizing
+wordbank_zeroed_assocs <- read_csv('shiny_apps/networks/assocs/w2v_assocs.csv')
+
+wordbank_long <- wordbank_zeroed_assocs %>%
+ gather(target, assoc, -in_node)
+
+wordbank_degrees <- wordbank_long %>%
+ group_by(in_node) %>%
+ summarise(degree = sum(assoc))
+
+wordbank_degrees <- wordbank_long %>%
+ group_by(in_node) %>%
+ summarise(degree = sum(exp(9*assoc)))
+
+
+
+
+###
+english_data %>% 
+    filter(value=='produces', age==18) %>% select(vocab_size, data_id)  %>% distinct(data_id, vocab_size)
+
+john_words <- english_data %>% 
+    filter(value=='produces') %>% 
+    filter(data_id==51861) %>%
+    select(uni_lemma)
+
+john_degrees <- node_degrees %>% filter(uni_lemma %in% john_words$uni_lemma)
+
+words_from_kids <- english_data %>% 
+    filter(value=='produces', age==16) %>%
+    select(uni_lemma)
+words_from_kids_degrees <- left_join(words_from_kids, node_degrees)
+hist(words_from_kids_degrees$final_degree)
+```
+
+```{r}
+data_to_plot <- words_from_kids_degrees
+min_degrees <- seq(0, max(data_to_plot$final_degree), 
+                   max(data_to_plot$final_degree)/50)
+
+full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
+        mean(data_to_plot$final_degree >= x)), degree = min_degrees)
+
+qplot(x = degree, y = prop, data = full_degree_dist) + 
+  scale_x_log10() +  
+  scale_y_log10() +
+  theme_bw()
+```
+
+
+
+early vs late talkers?
+```{r, echo=FALSE}
+kids_degree <- degree_str_full %>%
+  distinct(id, vocab_size, degree,age) %>%
+  mutate(degree=(degree/vocab_size))
+  
+vocab_size_norms <- english_data %>% 
+    distinct(data_id, age, vocab_size) %>%
+    group_by(age) %>%
+    summarize(average_vocab = median(vocab_size, na.rm=TRUE), sd_vocab=sd(vocab_size, na.rm=TRUE),
+              low_vocab_10= quantile(vocab_size, probs=.10,na.rm = TRUE))
+
+kids_degree_norms <- left_join(kids_degree, vocab_size_norms)
+
+
+```
+
+
+
+
+
+LONGITUDINAL kids
+```{r, echo=FALSE}
+repeated_administrations <- english_kids %>%
+  group_by(original_id) %>%
+  summarise(n = n())
+
+longitudinal_kids <- english_data %>%
+  left_join(english_kids) %>%
+  filter(longitudinal) %>%
+  distinct(original_id, age) %>%
+  group_by(original_id) %>%
+  summarise(n_ages = n())
+
+kid_degree_longitudinal <- degree_str_full %>%
+  filter(longitudinal, form == "WS") %>%
+  select(-id) %>%
+  mutate(age = as.numeric(age)) %>%
+  mutate(age = if_else(age == 17 | age == 29, age - 1, age)) %>%
+  gather(measure, value, vocab_size, degree) %>%
+  spread(age, value)
+```
 
 
 Investigating Variability in Kid's Early Words
@@ -1265,7 +1551,7 @@ english_data %>%
     group_by(vocab_size) %>% 
     summarize(n())
 
-#953 kids with 16 words
+#953 kids at 16 months
 english_data %>%
     filter(value=='produces') %>%
     distinct(data_id,age) %>%
