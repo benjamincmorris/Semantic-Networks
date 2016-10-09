@@ -54,8 +54,12 @@ for this_file in providence.fileids()[:10]:
 #get all childes copora
 CHILDES_all=' '.join(childes.words())
 CHILDES_all_dropped = remove_non_ascii_1(CHILDES_all)
+CHILDES_split = CHILDES_all_dropped.split(" ")
+CHILDES_split = map(lambda x: x.encode('ascii'), CHILDES_split)
+#drop unintelligible codes?
+CHILDES_fixed= [x for x in CHILDES_split if x != 'yyy' and x != 'xxx' and x != 'www']
 file= open("CHILDES_words_only.txt", "w")
-file.write(CHILDES_all_dropped)
+file.write(CHILDES_fixed)
 file.close()
 
 
@@ -66,17 +70,13 @@ file.close()
 #Snowball Stemmer is preferred (> Porter).
 from nltk.stem.snowball import SnowballStemmer
 stemmer= SnowballStemmer("english")
-childes_words = CHILDES_all_dropped.split(" ")
     
 def get_stems(text):
     return ' '.join(stemmer.stem(i) for i in text)
 
-#drop unintelligible codes?
-def remove_missed_words(text):
-    return ' '.join(i for i in text if i != ('xxx' or 'yyy' or 'www'))
 
 
-childes_stemmed = get_stems(childes_words)
+childes_stemmed = get_stems(CHILDES_fixed)
 with open("CHILDES_words_stemmed.txt", "a") as myfile:
     myfile.write(childes_stemmed)
 
