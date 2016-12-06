@@ -52,8 +52,8 @@ Training word2vec on CHILDES Data
 ```{r, echo=FALSE, cache= TRUE}
 # full childes
 # model = train_word2vec("Corpora/CHILDES_words_stemmed.txt",
-#                                        output="w2v_vectors/CHILDES_stemmed_vectors.bin", threads = 4,
-#                                        vectors = 100, window=6, cbow=1, min_count = 10, force= TRUE)
+#                             output="w2v_vectors/CHILDES_stemmed_vectors.bin", threads = 4,
+#                             vectors = 100, window=6, cbow=1, min_count = 10, force= TRUE)
 
 
 
@@ -70,9 +70,11 @@ missing_items <- read_csv("data/missing_lemmas.csv")
 
 all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
                         english_items$uni_lemma))
+all_cdi_stemmed <- read_csv('data/cdi_words_stemmed.txt', col_names='uni_lemma')
+cdi_stemmed_and_unstemmed <- data.frame(all_cdi_words, all_cdi_stemmed)
 
 #filter the matrix to only include CDI words
-model_wordbank <- model[[which(rownames(model) %in% all_cdi_words), average=FALSE]]
+model_wordbank <- model[[which(rownames(model) %in% all_cdi_stemmed$uni_lemma), average=FALSE]]
 model_wordbank_sorted <-model_wordbank[sort(rownames(model_wordbank)),]
 
 #Special cases
@@ -109,6 +111,7 @@ model_wordbank_unilemmas <- as.VectorSpaceModel(model_wordbank_specialcases[rown
 
 #create word similarity matrix
 wordbank_sim <- cosineSimilarity(model_wordbank_unilemmas, model_wordbank_unilemmas)
+wordbank_dist <- cosineDist(model_wordbank, model_wordbank)
 
 #set to zero all the negative values in the matrix
 wordbank_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
@@ -120,9 +123,57 @@ diag(wordbank_zeroed) <- 0
 #   our matrix and thus force directionality where there was none. 
 # wordbank_normal <- normalize_lengths(wordbank_zeroed)
 
+#trying to  normalize akin to Rotaru...
+wordbank_sum1 <- prop.table(wordbank_zeroed, margin = 1)
 
 
-# Rotaru 2016 also does the following step: "(f) consider the discrete Markov chain associated with DM, which we denote as MARKOV(DM), and compute the state of MARKOV(DM) at steps K = 1 through K = 7, namely SK(DM); (g) for each word W and each K between 1 and 7"
+# Rotaru 2016 also does the following step: "(f) consider the discrete Markov chain associated with DM, which we denote as MARKOV(DM), and compute the state of MARKOV(DM) at steps K = 1 through K = 7, namely SK(DM); (g) for each word W and each K between 1 and 7, count the number of close neighbours of W (numNeighK). A word V is considered a close neighbour of W if P(V |SK(DM)) > threshK, where threshK are lower thresholds."
+
+#example
+ex <- matrix(c(0,0.5,0.5,.5,0,.5,.5,.5,0),nrow = 3,
+    byrow = TRUE) #define the transition matrix
+dtmc_ex <- new("markovchain",transitionMatrix=ex,
+    states=c("a","b","c"),
+    name="MarkovChain A") #create the DTMC
+dtmc_ex
+plot(dtmc_ex)
+dtmc_ex['b', 'c']
+transitionProbability(dtmc_ex, 'a', 'b')
+conditionalDistribution(dtmc_ex, 'a')
+
+#simulate steps
+initialState<-c(0,1,0)
+steps<-1
+finalState<-initialState*dtmc_ex^steps #using power operator
+finalState
+
+
+
+
+dtmcA<-as(wordbank_sum1, "markovchain") 
+conditionalDistribution(dtmcA, 'moo')
+
+#hmmmm how do Rotaru et al generate the lower threshold?
+hist(rowSums(dtmcA@transitionMatrix>0.008))
+
+# are steps done for each node?
+starting_matrix <- matrix(ncol=nrow(wordbank_zeroed))
+step_through_MK <- function(transition_matrix, num_steps, start_with_number_1, states_matrix) {
+    if (start_with_number_1==(nrow(wordbank_zeroed)+1)) {
+        return(states_matrix)
+    } else 
+    initial_state <- rep(0,nrow(wordbank_zeroed))
+    initial_state[start_with_number_1]=1
+    finalState <- initial_state*transition_matrix^num_steps
+    final_states <- rbind(states_matrix, finalState)
+    step_through_MK(transition_matrix, num_steps, start_with_number_1 + 1, final_states)
+}
+
+step1 <- dtmcA@transitionMatrix
+step2 <- step_through_MK(dtmcA, 2, 1, starting_matrix)
+
+hist(rowSums(wordbank_dist))
+
 
 #write the matirx for visualization
 #NOTE:if you rewrite the csv file, the network will NOT load when you run the shiny app
@@ -1441,6 +1492,7 @@ qplot(x = degree, y = prop, data = full_degree_dist) +
 
 
 
+BECKAGE ANALYSES: Erdos-Renyi
 early vs late talkers?
 ```{r, echo=FALSE}
 kids_degree <- degree_str_full %>%
@@ -1455,6 +1507,45 @@ vocab_size_norms <- english_data %>%
 
 kids_degree_norms <- left_join(kids_degree, vocab_size_norms)
 
+
+
+random_and_erdos_degree <- function(num_nodes) {
+    random_nodes <- sample(all_items, num_nodes)
+
+    random_matrix <- wordbank_zeroed[which(rownames(wordbank_zeroed) %in% random_nodes),
+                                     which(colnames(wordbank_zeroed) %in% random_nodes)]
+    
+    
+    erdos_shuffle <- sample(seq(from = 1, to = (num_nodes^2)))
+    erdos_matrix <- matrix(random_matrix[erdos_shuffle], nrow=num_nodes, ncol=num_nodes)
+    c(mean(rowSums(random_matrix)), mean(rowSums(erdos_matrix)))
+}
+
+run_sim_degree <- function(i) {
+  replicate(1000,sample_degree(i))
+}       
+# random_nets_degree <- do.call("rbind", sapply(2:655, function(i) run_sim_degree(i), simplify = FALSE))
+
+
+
+###### MARKOV CHAINS?
+statesNames=c("a","b")
+ mcA<-new("markovchain", transitionMatrix=matrix(c(0.7,0.3,0.1,0.9),byrow=TRUE,
+ nrow=2, dimnames=list(statesNames,statesNames)))
+
+statesNames=c("a","b","c")
+mcB<-new("markovchain", states=statesNames, transitionMatrix=
+          matrix(c(0.2,0.5,0.3,
+                   0,1,0,
+                   0.1,0.8,0.1),nrow=3, byrow=TRUE, dimnames=list(statesNames,
+				   statesNames)
+                 ))
+
+statesNames=c("a","b","c","d")
+matrice<-matrix(c(0.25,0.75,0,0,0.4,0.6,0,0,0,0,0.1,0.9,0,0,0.7,0.3), 
+nrow=4, byrow=TRUE)
+mcC<-new("markovchain", states=statesNames, transitionMatrix=matrice)
+mcD<-new("markovchain", transitionMatrix=matrix(c(0,1,0,1), nrow=2,byrow=TRUE))
 
 ```
 

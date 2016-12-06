@@ -13,6 +13,8 @@ suppressPackageStartupMessages(library(readr))
 suppressPackageStartupMessages(library(lazyeval))
 suppressPackageStartupMessages(library(tidyr))
 suppressPackageStartupMessages(library(langcog))
+suppressPackageStartupMessages(library(igraph))
+suppressPackageStartupMessages(library(rstan))
 
 
 english_items <- get_item_data('English', 'WS') %>%
@@ -40,20 +42,19 @@ model_childes_stemmed = train_word2vec("Corpora/CHILDES_words_stemmed.txt",
 
 childes_stemmed_sim <- cosineSimilarity(model_childes_stemmed, model_childes_stemmed)
 #set to zero all the negative values in the matrix
-childes_stemmed_zeroed <- ifelse(childes_stemmed_sim < 0, 0, childes_stemmed_sem)
+childes_stemmed_zeroed <- ifelse(childes_stemmed_sim < 0, 0, childes_stemmed_sim)
 #also set the self weights to zero before normalizing
 diag(childes_stemmed_zeroed) <- 0
 childes_stemmed_degrees <- rowSums(childes_stemmed_zeroed)
 hist(childes_stemmed_degrees)
 
-all_cdi_words_stemmed <- read_csv('~/Desktop/cdi_words_stemmed.txt', col_names='uni_lemma')
-
+all_cdi_words_stemmed <- read_csv('data/cdi_words_stemmed.txt', col_names='uni_lemma')
+model_wordbank_stemmed <- model_childes_stemmed[[which(rownames(model_childes_stemmed) %in% 
+                                                     all_cdi_words_stemmed$uni_lemma), average=FALSE]]
 stemmed_and_unstemmed <- bind_cols(data.frame(unstemmed = all_cdi_words), all_cdi_words_stemmed) %>%
   mutate(in_childes_stemmed = uni_lemma %in% rownames(model_wordbank_stemmed),
-         in_childes = unstemmed %in% rownames(model_wordbank))
+         in_childes = unstemmed %in% rownames(model_wordbank_stemmed))
 
-model_wordbank_stemmed <- model_childes_mom[[which(rownames(model_childes_stemmed) %in% 
-                                                     all_cdi_words_stemmed$uni_lemma), average=FALSE]]
 wordbank_stemmed_sim <- cosineSimilarity(model_wordbank_stemmed, model_wordbank_stemmed)
 #set to zero all the negative values in the matrix
 wordbank_stemmed_zeroed <- ifelse(wordbank_stemmed_sim < 0, 0, wordbank_stemmed_sim)
@@ -594,27 +595,327 @@ all_assos_SWOW_wordbank <- all_assos_SWOW %>%
 ```
 
 
+
+
+ROGET'S THESAUROUS 
+```{r}
+hmm <- read.csv('~/Desktop/10681-index.txt', header=FALSE) 
+
+fill_func <- function(list) {
+  new_list <- list
+  
+  for(i in 2:length(list)) {
+    if(is.na(list[i]))
+      new_list[i] = new_list[i-1]
+  }
+  
+  return(new_list)
+}
+
+hmm_cats <- hmm %>%
+  mutate(word = if_else(grepl("([0-9]+).*$", V1), as.character(NA), as.character(V1))) %>%
+  # as_data_frame() %>%
+  mutate(fill_word = fill_func(word)) %>%
+  filter(is.na(word)) %>%
+  select(-word) %>%
+hmm_words <- hmm_cats %>% 
+  filter(!grepl(' ', fill_word)) %>% 
+  filter(!grepl('-', fill_word)) %>% 
+  filter(!grepl('_', fill_word)) %>%
+  filter(!grepl("[[:upper:]]", fill_word)) %>%
+  filter(!grepl('        .* .* .*', V1)) %>% 
+  filter(!grepl('-', V1)) %>% 
+  filter(!grepl('_', V1)) %>%
+  filter(!grepl("[[:upper:]]", V1))
+
+# the Steyvers plot, almost?
+bipartite <- hmm_words %>% group_by(fill_word) %>% summarize(degree=n())
+
+
+#collapsing bipartate graph to just word --- word connections.
+fill_words<- unique(hmm_words$fill_word)
+#redundancy won't matter
+t1<-proc.time()
+roget_connections <- data.frame(node1= NA, node2=NA)
+for (i in 1:length(fill_words)) {
+  erm <- filter(hmm_words, fill_word==fill_words[i])$V1
+  erm <- filter(hmm_words, V1 %in% erm) %>% rename(node1 =V1, node2=fill_word)
+  erm$node1 <- fill_words[i]
+  roget_connections <- bind_rows(roget_connections, erm)
+}
+proc.time()-t1
+
+roget_connections <- read_csv('data/roget_connections_fixed.csv') %>% select(-X1)
+roget_connections <- roget_connections[-1, ] %>% distinct()
+
+# indx <- !duplicated(t(apply(roget_connections, 1, sort)))
+# roget_connections_unique <- roget_connections[indx, ]
+
+roget_connections_unique <- roget_connections %>% distinct()
+
+roget_degree <- roget_connections_unique %>%
+  filter(node1 != node2) %>%
+  group_by(node1) %>%
+  summarise(degree = n())
+```
+
+
+
+```{r}
+childes_frequency <- read_csv('data/childes_english.csv') %>% 
+  filter(word %in% rownames(wordbank_zeroed)) 
+childes_degree <- data.frame(degree = rowSums(wordbank_zeroed), word = rownames(wordbank_zeroed))
+childes_freq_and_deg <- left_join(childes_frequency,childes_degree)
+
+#negative correlation between word degree and frequency
+cor(childes_freq_and_deg$word_count, childes_freq_and_deg$degree)
+
+#just looking at the nouns
+word_categories <- english_data %>%
+  distinct(uni_lemma, lexical_category)
+wordbank_nouns <- word_categories %>% 
+    filter(lexical_category=='nouns') 
+childes_freq_nouns <- childes_frequency %>% filter(word %in% wordbank_nouns$uni_lemma)
+childes_freq_deg_nouns <- left_join(childes_freq_nouns, childes_degree)
+```
+
 PLOTTING
 ```{r}
 
 ######## PLOTTING ########
 ##set this to whatever you want to plot ##
-plot_me <- connected_both_SWOW
-title <- expression(connected_both_SWOW)
+plot_me <- childes_degree
+title <- childes_degree
 logspace <- function(d1, d2, n) exp(log(10)* seq(d1, d2, length.out=n))
 
-min_degrees <- logspace(0, log10(max(plot_me$degree)), 100)
+min_degrees <- logspace(0, log10(max(plot_me$degree)), 50)
 
 full_degree_dist <- data_frame(prop = sapply(min_degrees, function(x)
         mean(plot_me$degree  >= x)), degree = min_degrees)
 
 qplot(x = degree, y = prop, data = full_degree_dist) + 
   scale_x_log10() +  
-  scale_y_log10() +
+  scale_y_log10() +  
   #scale_y_log10(breaks = logspace(log10(10^-6),1,10), limits=c(10^-6, 1)) +
   theme_bw() +
   ggtitle(label=title)
 ```
+
+
+
+
+
+
+
+
+rstan
+```{r}
+#fitting power law without rstan
+z <- nls(childes_degree_binned$count ~ childes_degree_binned$degree^b+c, start = list(b=1, c=1))
+
+
+
+# example data:
+x <- rnorm(7, 90, 15)
+# y <- c(1000,10,140,450,250,1000,10)
+y <- rnorm(7, 200, 50)
+N <- 7
+
+
+#childes data - need to bin degrees
+childes_degree <- data.frame(degree=wordbank_stemmed_degrees, word=rownames(wordbank_stemmed_sim))
+degree_bins <- seq(0, max(childes_degree$degree), 
+                   max(childes_degree$degree)/50)
+
+childes_degree_binned <- data_frame(count = sapply(degree_bins, function(x)
+        sum(childes_degree$degree <= x)), degree = degree_bins)
+
+childes_degree$deg_binned <- cut(childes_degree$degree, breaks=degree_bins, labels=FALSE)
+childes_degree_binned <- childes_degree %>% 
+    group_by(deg_binned) %>% 
+    summarize(count=n()) 
+
+x <- childes_degree_binned$deg_binned
+y <- childes_degree_binned$count
+N <- nrow(childes_degree_binned)
+
+
+dp
+
+
+#sanity check with barabasi model example
+barabasi_ex <- sample_pa(1000, power= 1, directed=FALSE)
+
+barabasi_hist <- hist(barabasi_degree$degree, plot = FALSE, breaks = seq(min(barabasi_degree$degree)))
+    
+
+pois_degree <- list(N = length(x), x = x)
+dat <- pois_degree
+
+
+barabasi_degree <- data.frame(degree= degree(barabasi_ex), 
+                              node = seq(1,(length(degree(barabasi_ex))))) 
+
+dat <- list(N = nrow(barabasi_degree), x = barabasi_degree$degree)
+
+
+# barabasi_ex <- sample_fitness_pl(1000, 1000, exponent.out = 2.5, exponent.in = -1, loops=FALSE, multiple=FALSE)
+#sample fitness pl - need to drop degree of 0?
+# barabasi_degree <- barabasi_degree[-which(barabasi_degree$degree==0),]
+
+pois_degree <- rpois(1000, 2) 
+pois_degree <- pois_degree[pois_degree > 0]
+
+dat <- list(N = length(pois_degree), x = pois_degree)
+
+barabasi_degree_binned <- barabasi_degree %>%
+    group_by(degree) %>%
+    summarize(count=n()) %>%
+  ungroup() %>%
+  mutate(count = count/sum(count))
+
+
+x <- barabasi_degree$degree
+
+dat = with(barabasi_degree_binned, list(N = length(count), degree = degree, count = count))
+
+pow_model = stan_model(file = 'rstan/pow.stan')
+pois_model = stan_model(file = 'rstan/pois.stan')
+
+
+pow_out = stan(file = "rstan/pow.stan", data = dat, 
+             iter = 5000, chains = 1,warmup = 1000)
+
+pow_target_out = stan(file = "rstan/pow_target.stan", data = dat, 
+             iter = 5000, chains = 1,warmup = 1000)
+
+pow_2_out = stan(file = "rstan/pow_2.stan", data = dat, 
+             iter = 5000, chains = 1,warmup = 1000)
+
+
+pow_3_out = stan(file = "rstan/pow_3.stan", data = dat, 
+             iter = 5000, chains = 1,warmup = 1000)
+
+
+mean(extract_log_lik(pow_2_out, parameter_name = "log_lik"))
+
+
+
+pois_out = stan(file = "rstan/pois.stan", data = dat, 
+             iter = 5000, chains = 1,warmup = 1000)
+pois_target_out = stan(file = "rstan/pois_target.stan", data = dat, 
+             iter = 5000, chains = 1,warmup = 1000)
+
+
+xs <- seq(2, 10, .01)
+sum(dpareto(xs, 2))
+
+ys <- seq(-2, 2, .01)
+sum(dnorm(ys, 0, 1))
+
+out
+library(ggmcmc)
+samples = ggs(out)
+ggmcmc(D=samples, file=NULL, plot='ggs_histogram')
+ggmcmc(D=samples, file=NULL, plot='ggs_traceplot')
+ggmcmc(D=samples, file=NULL, plot='ggs_compare_partial')
+ggmcmc(D=samples, file=NULL, plot='ggs_autocorrelation')
+
+
+
+dpareto <- function(x,c){
+if(c<=0)stop("c must be positive") # Diagnostic step
+ifelse(x<1,0,c/x^(c+1))}
+
+ppareto <- function(q,c){
+if(c<=0)stop("c must be positive > 0")
+ifelse(q<1,0,1-1/q^c)}
+
+qpareto <- function(p,c){
+if(c<=0) stop("c must be positive > 0")
+if(any(p<0)|any(p>1)) # Symbol | denotes logical OR
+stop("p must be between 0 and 1")
+q <- (1-p)^(-1/c)
+q}
+
+rpareto <- function(n,c){
+if(c<=0) stop("c must be positive")
+rp <- runif(n)^(-1/c)
+rp}
+
+dpareto_norm <- function(x,c){
+if(c<=0)stop("c must be positive") # Diagnostic step
+ifelse(x<1,
+       0,
+       (c-1) * (x^-c))}
+       
+       c/x^(c+1))}
+
+
+
+dat <- list(N = 1000, x = rpareto(1000, 2))
+
+both_data <- data.frame(node = 1:1000, barabasi = barabasi_degree$degree, pareto = rpareto(1000, 2))
+all_data <- left_join(both_data, data.frame(node = 1:1000, pois = rpois(1000, 2)))
+
+all_data_long <- all_data %>%
+  gather(type, degree, -node) %>%
+  dplyr::as_data_frame() %>%
+  group_by(type, degree) %>%
+  summarize(count=n()) %>%
+  group_by(type) %>%
+  mutate(count = count/sum(count)) %>%
+  mutate(pois_estimate = dpois(degree, 2)) %>%
+  mutate(pareto_estimate = dpareto(degree, 2.315)) %>%
+  mutate(pareto_estimate = pareto_estimate/sum(pareto_estimate))
+
+ratio_data <- all_data_long %>%
+  filter(type == "barabasi") %>%
+  mutate(ratio = log(pareto_estimate)-log(pois_estimate))
+
+ggplot(data = ratio_data, aes(x = degree, y = ratio)) +
+  geom_point()
+
+ggplot(all_data_long, aes(x = degree)) +
+  facet_wrap(~ type) + 
+  geom_point(aes(y = count)) +
+  geom_point(aes(y = pareto_estimate), color = "darkred") + 
+  geom_point(aes(y = pois_estimate), color = "lightblue") + 
+  #coord_cartesian(xlim = c(0, 5)) +
+  #scale_x_continuous(breaks = seq(1,25)) + 
+  theme_bw()
+
+
+
+
+
+fit_ss <- extract(pois_out); 
+fit_lambda <- fit_ss$lambda; 
+fit_lp <- fit_ss$lp__; 
+
+lpfun <- function(lam) { dpois(3,lam,log=TRUE) + log(lam) }; 
+  print("lambda, lp__, log_prob_from_R, diff") 
+  for (n in 1:10) { 
+   print(paste(c(fit_lambda[n], 
+                 fit_lp[n], 
+                 lpfun(fit_lambda[n]), 
+                 fit_lp[n] - lpfun(fit_lambda[n])))); 
+} 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
