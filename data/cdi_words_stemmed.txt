@@ -1,0 +1,730 @@
+baa baa
+choo choo
+cockadoodledoo
+quack quack
+uh oh
+woof woof
+yum yum
+chicken (animal)
+fish (animal)
+teddybear
+play dough
+toy (object)
+chicken (food)
+drink (beverage)
+fish (food)
+french fri
+green bean
+ice cream
+orange (food)
+peanut butt
+potato chip
+water (beverage)
+dress (object)
+belly button
+brush (object)
+can (object)
+comb (object)
+watch (object)
+high chair
+living room
+play pen
+rocking chair
+washing machin
+lawn mow
+rock (object)
+slide (object)
+swing (object)
+water (not beverage)
+gas stat
+work (place)
+babysitter's nam
+child's own nam
+pet's nam
+call on phon
+give me f
+gonna get you
+go potti
+good night
+so big
+thank you
+this little piggi
+turn around
+clean (action)
+cover (action)
+drink (action)
+dry (action)
+open (action)
+paint (action)
+slide (action)
+swing (action)
+watch (action)
+work (action)
+all gon
+clean (description)
+dry (description)
+hurt (description)
+little (description)
+orange (description)
+wet (description)
+when (question)
+where (question)
+which (question)
+back (location)
+next to
+on top of
+a lot
+can (auxiliary)
+baa
+choo
+na
+quack
+uhoh
+woof
+yum
+chicken
+fish
+teddi
+playdough
+toy
+fri
+ice
+orang
+peanut
+chip
+water
+dress
+belli
+brush
+comb
+watch
+highchair
+playroom
+rock
+wash
+lawnmow
+rock
+slide
+gas
+call
+good_night
+thank_you
+clean
+drink
+dri
+open
+paint
+swing
+hurt
+littl
+wet
+when
+where
+which
+back
+next_to
+a_lot
+can
+food
+cream
+clock
+chair
+machin
+stone
+outsid
+phone
+grrr
+meow
+moo
+ouch
+vroom
+allig
+anim
+ant
+bear
+bee
+bird
+bug
+bunni
+butterfli
+cat
+cow
+deer
+dog
+donkey
+duck
+eleph
+frog
+giraff
+goos
+hen
+hors
+kitti
+lamb
+lion
+monkey
+moos
+mous
+owl
+penguin
+pig
+poni
+puppi
+rooster
+sheep
+squirrel
+tiger
+turkey
+turtl
+wolf
+zebra
+airplan
+bicycl
+boat
+bus
+car
+firetruck
+helicopt
+motorcycl
+sled
+stroller
+tractor
+train
+tricycl
+truck
+ball
+balloon
+bat
+block
+book
+bubbl
+chalk
+crayon
+doll
+game
+glue
+pen
+pencil
+present
+puzzl
+stori
+appl
+applesauc
+banana
+bean
+bread
+butter
+cake
+candi
+carrot
+cereal
+cheerio
+chees
+chocol
+coffe
+coke
+cooki
+corn
+cracker
+donut
+egg
+grape
+gum
+hamburg
+jello
+jelli
+juic
+lollipop
+meat
+melon
+milk
+muffin
+noodl
+nut
+pancak
+pea
+pickl
+pizza
+popcorn
+popsicl
+potato
+pretzel
+pud
+pumpkin
+raisin
+salt
+sandwich
+sauc
+soda
+soup
+spaghetti
+strawberri
+toast
+tuna
+vanilla
+vitamin
+yogurt
+bead
+belt
+bib
+boot
+button
+coat
+diaper
+glove
+hat
+jacket
+jean
+mitten
+necklac
+pajama
+pant
+scarf
+shirt
+shoe
+short
+slipper
+sneaker
+snowsuit
+sock
+sweater
+tight
+underp
+zipper
+ankl
+arm
+butt
+cheek
+chin
+ear
+eye
+face
+finger
+foot
+hair
+hand
+head
+knee
+leg
+lip
+mouth
+nose
+owi
+peni
+shoulder
+toe
+tongu
+tooth
+tummi
+vagina
+basket
+blanket
+bottl
+bowl
+box
+broom
+bucket
+camera
+cup
+dish
+fork
+garbag
+glass
+glass
+hammer
+jar
+key
+knife
+lamp
+light
+medicin
+money
+mop
+nail
+napkin
+paper
+penni
+pictur
+pillow
+plant
+plate
+purs
+radio
+scissor
+soap
+spoon
+tape
+telephon
+tissu
+toothbrush
+towel
+trash
+tray
+vacuum
+walker
+basement
+bathroom
+bathtub
+bed
+bedroom
+bench
+closet
+couch
+crib
+door
+drawer
+dryer
+garag
+kitchen
+oven
+porch
+potti
+refriger
+room
+shower
+sink
+sofa
+stair
+stove
+tabl
+tv
+window
+yard
+cloud
+flag
+flower
+garden
+grass
+hose
+ladder
+moon
+pool
+rain
+roof
+sandbox
+shovel
+sidewalk
+sky
+snow
+snowman
+sprinkler
+star
+stick
+street
+sun
+tree
+wind
+beach
+camp
+church
+circus
+countri
+downtown
+farm
+home
+hous
+movi
+park
+parti
+picnic
+playground
+school
+store
+wood
+zoo
+aunt
+babi
+babysitt
+boy
+brother
+child
+clown
+cowboy
+daddi
+doctor
+fireman
+friend
+girl
+grandma
+grandpa
+ladi
+mailman
+man
+mommi
+nurs
+peopl
+person
+polic
+sister
+teacher
+uncl
+bath
+breakfast
+bye
+dinner
+hello
+hi
+lunch
+nap
+no
+pattycak
+peekaboo
+pleas
+shh
+shop
+snack
+yes
+bite
+blow
+break
+bring
+build
+bump
+buy
+carri
+catch
+chase
+clap
+climb
+close
+cook
+cri
+cut
+danc
+draw
+drive
+drop
+dump
+eat
+fall
+feed
+find
+finish
+fit
+fix
+get
+give
+go
+hate
+have
+hear
+help
+hide
+hit
+hold
+hug
+hurri
+jump
+kick
+kiss
+knock
+lick
+like
+listen
+look
+love
+make
+pick
+play
+pour
+pretend
+pull
+push
+put
+read
+ride
+rip
+run
+say
+see
+shake
+share
+show
+sing
+sit
+skate
+sleep
+smile
+spill
+splash
+stand
+stay
+stop
+sweep
+swim
+take
+talk
+tast
+tear
+think
+throw
+tickl
+touch
+wait
+wake
+walk
+wash
+wipe
+wish
+write
+asleep
+awak
+bad
+better
+big
+black
+blue
+broken
+brown
+care
+cold
+cute
+dark
+dirti
+empti
+fast
+fine
+first
+full
+gentl
+good
+green
+happi
+hard
+heavi
+high
+hot
+hungri
+last
+long
+loud
+mad
+naughti
+new
+nice
+noisi
+old
+poor
+pretti
+quiet
+red
+sad
+scare
+sick
+sleepi
+slow
+soft
+sticki
+stuck
+thirsti
+tini
+tire
+white
+windi
+yellow
+yucki
+after
+befor
+day
+later
+morn
+night
+now
+time
+today
+tomorrow
+tonight
+yesterday
+he
+her
+her
+him
+his
+i
+it
+me
+mine
+my
+myself
+our
+she
+that
+their
+them
+these
+they
+this
+those
+us
+we
+you
+your
+yourself
+how
+what
+who
+whi
+about
+abov
+around
+at
+away
+behind
+besid
+by
+down
+for
+here
+in
+into
+of
+off
+on
+out
+over
+there
+to
+under
+up
+with
+a
+all
+anoth
+ani
+each
+everi
+more
+much
+none
+not
+other
+same
+some
+the
+too
+am
+are
+be
+could
+did
+do
+doe
+don't
+gonna
+gotta
+hafta
+is
+lemm
+need
+tri
+wanna
+was
+were
+will
+would
+and
+becaus
+but
+if
+so
+then
