@@ -1,0 +1,212 @@
+---
+title: "word2vec_pairwise"
+author: "Ben Morris"
+date: "11/2/2017"
+output: html_document
+---
+
+
+```{r, echo=FALSE, warning=FALSE}
+suppressPackageStartupMessages(library(devtools))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(wordVectors))
+suppressPackageStartupMessages(library(wordbankr))
+suppressPackageStartupMessages(library(shiny))
+suppressPackageStartupMessages(library(shinyBS))
+suppressPackageStartupMessages(library(visNetwork))
+suppressPackageStartupMessages(library(tsne))
+suppressPackageStartupMessages(library(networkD3))
+suppressPackageStartupMessages(library(igraph))
+suppressPackageStartupMessages(library(lazyeval))
+suppressPackageStartupMessages(library(langcog))
+suppressPackageStartupMessages(library(entropy))
+
+
+
+english_cats <- get_item_data("English (American)", "WS") %>%
+  filter(type=="word") %>%
+  distinct(uni_lemma, .keep_all=TRUE) %>%
+  select(uni_lemma, category)
+
+
+english_items <- get_item_data("English (American)", "WS") %>%
+  filter(type =='word') %>%
+  select(uni_lemma) %>%
+  distinct() 
+
+head(english_items)
+#NOTE: This drops "an" from the cdi. Might be other cases where two definitions map onto the same uni_lemma
+
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+```
+
+```{r}
+model <- read.vectors("w2v_vectors/CHILDES_stemmed_vectors.bin")
+
+######## Special case code needs to be updated to deal with stemming/lemmatization ####### 
+
+# Read back the csv with a new colum of replacement lemmas
+missing_items <- read_csv("data/missing_lemmas.csv")
+
+all_cdi_words <- unique(c(as.vector(as.matrix(missing_items)),
+                        english_items$uni_lemma))
+all_cdi_stemmed <- read_csv('data/cdi_words_stemmed.txt', col_names='uni_lemma')
+#11.2.2017, spaghetti no longer a thing in cdi?
+all_cdi_stemmed <- all_cdi_stemmed$uni_lemma[-which(all_cdi_stemmed$uni_lemma == "spaghetti")]
+
+cdi_stemmed_and_unstemmed <- data.frame(all_cdi_words, all_cdi_stemmed)
+
+#filter the matrix to only include CDI words
+model_wordbank <- model[[which(rownames(model) %in% all_cdi_stemmed), average=FALSE]]
+model_wordbank_sorted <-model_wordbank[sort(rownames(model_wordbank)),]
+
+#Special cases
+special_cases <- missing_items %>%
+  filter(!is.na(addword) | !is.na(subword))
+
+rename_cases <- missing_items %>%
+  filter(is.na(addword) & is.na(subword),
+         !is.na(word)) %>%
+  arrange(uni_lemma)
+
+extra_rows <- rownames(model_wordbank_sorted)  %in% rename_cases$word
+rownames(model_wordbank_sorted)[extra_rows] <- rename_cases$uni_lemma
+
+special_case_vector <- function(special_case) {
+  if(!is.na(special_case$addword)) {
+   model_wordbank[special_case$word,] + 
+      model_wordbank[special_case$addword,]
+  } else {
+    model_wordbank[special_case$word,] - 
+      model_wordbank[special_case$subword,]
+  }
+}
+
+special_case_vectors <- t(sapply(1:nrow(special_cases), 
+                               function(x) special_case_vector(special_cases[x,]), 
+                               simplify = "matrix"))
+rownames(special_case_vectors) <- special_cases$uni_lemma
+
+model_wordbank_specialcases <- rbind(model_wordbank_sorted, special_case_vectors)
+
+model_wordbank_unilemmas <- as.VectorSpaceModel(model_wordbank_specialcases[rownames(model_wordbank_specialcases)
+                                                        %in% english_items$uni_lemma, ])
+
+model_wordbank_unilemmas <- as.VectorSpaceModel(model_wordbank_sorted[rownames(model_wordbank_sorted)
+                                                        %in% english_items$uni_lemma, ])
+
+#create word similarity matrix
+wordbank_sim <- cosineSimilarity(model_wordbank_unilemmas, model_wordbank_unilemmas)
+
+#set to zero all the negative values in the matrix
+wordbank_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
+```
+
+
+
+
+
+```{r}
+wordbank_fixed <- wordbank_zeroed
+
+#normalizing to 1
+# wordbank_normalized <- prop.table(wordbank_zeroed, margin = 1)
+
+
+# test <- wordbank_zeroed[1:6,1:6]
+wordbank_fixed[lower.tri(wordbank_fixed, diag=TRUE)] <- NA
+wordbank_fixed<-cbind(thing1=rownames(wordbank_fixed),wordbank_fixed)
+
+pairwise_sim <- gather(as.data.frame(wordbank_fixed), key=thing2, value=sim, -thing1)
+# english_cats <- english_ws_items %>% select(uni_lemma, category) %>% as.data.frame(.)
+
+pairwise_sim <- pairwise_sim %>% filter(!is.na(sim))
+#coercing new rows on accident?
+pairwise_cats <- pairwise_sim %>% 
+  inner_join(english_cats, by=c("thing1"="uni_lemma")) %>%
+  rename(category1=category) %>% 
+  left_join( english_cats, by=c("thing2"="uni_lemma")) %>%
+  rename(category2=category)
+
+
+
+pairwise_cats <- pairwise_cats %>% 
+  mutate(sameCat = ifelse(category1==category2, 1, 0)) %>%
+  mutate(sim=as.numeric(sim))
+
+ggplot(data=pairwise_cats, aes(x=sim)) +
+         geom_histogram(aes(x=sim)) + xlab("W2V Pairwise Cosine Similarity")
+```
+
+
+#p-p-p-PLOTS!
+```{r}
+#plot of word2vec pairwise sim within categories versus across (*DIFFCATS)
+diff_cats_colors <- scales::hue_pal(h = c(0, 360))(23)
+diff_cats_colors[1] <- "#000000"
+
+pairwise_cats %>% 
+  mutate(category1=ifelse(sameCat==0, "*DIFFCATS", category1)) %>%
+  group_by(category1, sameCat) %>%
+  summarize(avg_sim=mean(sim, na.rm=TRUE), sd=sd(sim)) %>%
+  ggplot(aes(x=category1, y=avg_sim, group=category1)) +
+  geom_bar(stat="identity",position="dodge", aes(x=as.factor(category1), y=avg_sim, fill=category1)) +
+  geom_linerange(stat="identity", position="dodge", aes(ymax=avg_sim+sd, ymin=avg_sim-sd)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(x="Category, if Same", y="Mean Pairwise Similarity from W2V") +
+  scale_fill_manual(values=diff_cats_colors)
+
+
+#each cat, avg vs diff categories, or same cat
+pairwise_cats %>% 
+  group_by(category1, sameCat) %>%
+  summarize(avg_sim=mean(sim, na.rm=TRUE), sd=sd(sim)) %>%
+  ggplot(aes(x=category1, y=avg_sim, group=sameCat)) +
+  geom_bar(stat="identity",position="dodge", aes(x=as.factor(category1), y=avg_sim, fill=as.factor(sameCat))) +
+  geom_linerange(stat="identity", position=position_dodge(.9), aes(ymax=avg_sim+sd, ymin=avg_sim-sd)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(x="Target Word Category", y="Mean Pairwise Similarity from W2V") +
+  scale_fill_manual(values=c('black', 'steelblue1'), name="Paired Word Category", 
+                    labels=c('Different (All Averaged)', 'Same Category'))
+  
+
+#full spread, every possible category pair
+pairwise_cats %>% 
+  group_by(category1, category2, sameCat) %>%
+  summarize(avg_sim=mean(sim, na.rm=TRUE), sd=sd(sim)) %>%
+  ggplot(aes(x=category1, y=avg_sim, group=category2)) +
+  geom_bar(stat="identity",position="dodge", aes(x=as.factor(category1), y=avg_sim, fill=category2, alpha=as.factor(sameCat))) +
+  # geom_linerange(stat="identity", position="dodge", aes(ymax=avg_sim+sd, ymin=avg_sim-sd, color=category2)) +
+  theme_bw() +
+  # facet_grid(~category2) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  # coord_cartesian(ylim=c(0,.015)) +
+  labs(x="Target Word Category", y="Mean Pairwise Similarity from W2V") +
+  scale_fill_hue(name="Paired Word Category") +
+  scale_alpha_manual(values=c(.4,1), name="", labels=c('Different Categories', 'Same Categories'))
+
+
+```
+
+```{r}
+plot_me_sim <- function(data, groupingVar, yVar) {
+  groupingVar <- enquo(groupingVar)
+  yVar<- enquo(yVar)
+  # optionalGroup2 <- enquo(optionalGroup2)
+  new_data <- data %>%
+    group_by(!!groupingVar) %>%
+    summarize(avg_sim=mean(sim, na.rm=TRUE), sd=sd(sim))
+  new_plot <- ggplot(new_data, aes_q(x=groupingVar, y=yVar, group=groupingVar)) +
+    geom_bar(stat="identity",position="dodge", aes(x=as.factor(groupingVar), y=yVar, fill=groupingVar, color=groupingVar)) 
+  print(new_plot)
+}
+
+pairwise_cats %>% plot_me_sim(category1, avg_sim)
+
+```
+
+
+
