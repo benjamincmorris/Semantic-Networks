@@ -210,3 +210,54 @@ pairwise_cats %>% plot_me_sim(category1, avg_sim)
 
 
 
+```{r}
+tmp <- read_feather("~/Downloads/coded_responses.feather")
+head(tmp)
+
+tmp_lagged <- tmp %>%
+  group_by(subj,age) %>%
+  mutate(lag_referent = lag(referent))
+
+# losing 600 of the referents?
+model_ldp <- model[[which(rownames(model) %in% tmp_lagged$referent), average=FALSE]]
+ldp_referents <- tmp %>% distinct(referent)
+problem_cases <- ldp_referents[which(!ldp_referents$referent %in% rownames(model)),]
+
+find_missing <- data.frame(ref= rownames(model)) %>%
+  mutate(found_one = ifelse(grepl(ref,"ho"), 1,0))
+
+matches <- unique (grep(paste(rownames(model),collapse="|"), 
+                        problem_cases, value=TRUE))
+
+
+# create a similarity matrix
+ldp_sim <- cosineSimilarity(model_ldp, model_ldp)
+#set to zero all the negative values in the matrix
+ldp_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
+
+ldp_fixed <- ldp_zeroed
+ldp_fixed[lower.tri(ldp_fixed, diag=TRUE)] <- NA
+ldp_fixed<-cbind(thing1=rownames(ldp_fixed), ldp_fixed)
+
+ldp_sim <- gather(as.data.frame(ldp_fixed), key=thing2, value=sim, -thing1)
+
+ldp_sim <- ldp_sim %>% filter(!is.na(sim)) %>% mutate(sim=as.numeric(sim))
+
+
+ggplot(data=ldp_sim, aes(x=sim)) +
+         geom_histogram(aes(x=sim)) + xlab("W2V Pairwise Cosine Similarity")
+
+hm <- tmp_lagged %>% left_join(ldp_sim, by=c('referent'='thing1', 'lag_referent' = 'thing2'))
+testing <- hm %>% 
+  filter(!is.na(sim)) %>%
+  #these one-to-one cases are already excluded because we NA'd the diagnal of the similarity matrix
+  filter(!lag_referent == referent) %>%
+  mutate(sim=as.numeric(sim))
+
+ggplot(data=testing, aes(x=sim)) +
+         geom_histogram(aes(x=sim)) + labs(x="W2V Cosine Sim of Current Referent and Lag Referent", y="Frequency")
+```
+
+
+
+
