@@ -211,6 +211,7 @@ pairwise_cats %>% plot_me_sim(category1, avg_sim)
 
 
 ```{r}
+library(feather)
 tmp <- read_feather("~/Downloads/coded_responses.feather")
 head(tmp)
 
@@ -233,7 +234,7 @@ matches <- unique (grep(paste(rownames(model),collapse="|"),
 # create a similarity matrix
 ldp_sim <- cosineSimilarity(model_ldp, model_ldp)
 #set to zero all the negative values in the matrix
-ldp_zeroed <- ifelse(wordbank_sim < 0, 0, wordbank_sim)
+ldp_zeroed <- ifelse(ldp_sim < 0, 0, ldp_sim)
 
 ldp_fixed <- ldp_zeroed
 ldp_fixed[lower.tri(ldp_fixed, diag=TRUE)] <- NA
@@ -259,5 +260,130 @@ ggplot(data=testing, aes(x=sim)) +
 ```
 
 
+```{r}
+# ex
+examp1 <- "When discussing performance with colleagues, teaching, sending a bug report or searching for guidance on mailing lists and here on SO, a reproducible example is often asked and always helpful. What are your tips for creating an excellent example? "
+examp2 <- "Sometimes the problem really isn't reproducible with a smaller piece of data, no matter how hard you try, and doesn't happen with synthetic data (although it's useful to show how you produced synthetic data sets that did not reproduce the problem, because it rules out some hypotheses). " 
+examp3 <- "You are most likely to get good help with your R problem if you provide a reproducible example. A reproducible example allows someone else to recreate your problem by just copying and pasting R code. There are four things you need to include to make your example reproducible: required packages, data, code, and a description of your R environment."
+examp4 <- "Do your homework before posting: If it is clear that you have done basic background research, you are far more likely to get an informative response. See also Further Resources further down this page. Do help.search(keyword) and apropos(keyword) with different keywords (type this at the R prompt)."
+examp5 <- "Before asking a technical question by e-mail, or in a newsgroup, or on a website chat board, do the following:  Try to find an answer by searching the archives of the forum you plan to post to. Try to find an answer by searching the Web. Try to find an answer by reading the manual. Try to find an answer by reading a FAQ."
 
+
+df <- data.frame(ID = sapply(1:5, function(i) paste0(sample(letters, 5), collapse = "")),
+                 txt = sapply(1:5, function(i) eval(parse(text=paste0("examp",i))))
+                 )
+
+m <- list(ID = "ID", Content = "txt")
+myReader <- readTabular(mapping = m)
+mycorpus <- Corpus(DataframeSource(df), readerControl = list(reader = myReader))
+
+# Manually keep ID information from https://stackoverflow.com/a/14852502/1036500
+for (i in 1:length(mycorpus)) {
+  attr(mycorpus[[i]], "ID") <- df$ID[i]
+}
+
+```
+
+
+
+```{r}
+library(tm)
+library(topicmodels)
+
+# m <- list(ID=)
+m <- list(ID = "subj", Content = "chat")
+myReader <- readTabular(mapping = m)
+tmp_fixed <- tmp %>% 
+  select(subj,chat) %>%
+  as.data.frame()
+
+mycorpus <- Corpus(DataframeSource(tmp_fixed), readerControl = list(reader = myReader))
+
+
+
+tmp_fixed <- tmp %>% filter(!is.na(referent)) %>% ungroup() %>% group_by(subj, age) %>%
+  summarize(referents=paste(referent, collapse=' ')) %>% 
+  as.data.frame()
+
+tmp_window <- tmp %>% filter(!is.na(referent)) %>% ungroup() %>%
+  mutate(run=rep(1:(nrow(.)/10), each=10)) %>% 
+  group_by(run) %>%
+  summarize(referents=paste(referent, collapse=' '))
+# # ------------------------------
+
+
+hm <- VectorSource(unlist(lapply(tmp_window$referents, as.character)))
+corpus <- SimpleCorpus(hm)
+
+docs <-tm_map(corpus,content_transformer(tolower))
+toSpace <- content_transformer(function(x, pattern) { return (gsub(pattern, " ", x))})
+docs <- tm_map(docs, toSpace, "-")
+docs <- tm_map(docs, toSpace, "’")
+docs <- tm_map(docs, toSpace, "‘")
+docs <- tm_map(docs, toSpace, ".")
+docs <- tm_map(docs, toSpace, "?")
+
+docs <- tm_map(docs, removePunctuation)
+
+# 
+writeLines(as.character(corpus[[1]]))
+
+# 
+
+
+
+#Create document-term matrix
+dtm <- DocumentTermMatrix(corpus)
+#convert rownames to filenames
+filenames <- tmp_fixed %>%  mutate(id = paste(subj, age, sep="_")) %>% select(id) %>% as.vector(.)
+rownames(dtm) <- filenames$id
+#collapse matrix by summing over columns
+freq <- colSums(as.matrix(dtm))
+#length should be total number of terms
+length(freq)
+#create sort order (descending)
+ord <- order(freq,decreasing=TRUE)
+#List all terms in decreasing order of freq and write to disk
+freq[ord]
+# write.csv(freq[ord],"word_freq.csv")
+
+```
+
+
+
+```{r}
+#Set parameters for Gibbs sampling
+burnin <- 4000
+iter <- 2000
+thin <- 500
+seed <-list(2003,5,63,100001,765)
+nstart <- 5
+best <- TRUE
+ 
+
+#Number of topics
+k <- 5
+
+
+#Run LDA using Gibbs sampling
+ldaOut <-LDA(dtm,k, method="Gibbs", control=list(nstart=nstart, seed = seed, best=best, 
+                                                 burnin = burnin, iter = iter, thin=thin))
+ 
+
+#write out results
+#docs to topics
+ldaOut.topics <- as.matrix(topics(ldaOut))
+# write.csv(ldaOut.topics,file=paste("LDAGibbs",k,"DocsToTopics.csv"))
+
+ldaOut.terms <- as.matrix(terms(ldaOut,6))
+
+
+
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+
+#Find relative importance of top 2 topics
+topic1ToTopic2 <- lapply(1:nrow(dtm),function(x)
+sort(topicProbabilities[x,])[k]/sort(topicProbabilities[x,])[k-1])
+ 
+```
 
